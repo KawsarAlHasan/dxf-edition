@@ -13,6 +13,7 @@ import {
   Switch,
   Statistic,
   Alert,
+  InputNumber,
 } from "antd";
 import {
   UndoOutlined,
@@ -29,6 +30,10 @@ import {
   UnlockOutlined,
   ZoomInOutlined,
   ZoomOutOutlined,
+  ArrowUpOutlined,
+  ArrowDownOutlined,
+  ArrowLeftOutlined,
+  ArrowRightOutlined,
 } from "@ant-design/icons";
 import { produce } from "immer";
 
@@ -68,6 +73,10 @@ const DxfEditor = () => {
   const [lineWidth, setLineWidth] = useState(2);
   const [toolMode, setToolMode] = useState("select");
   const [availableDxfFiles] = useState(initialShapes);
+
+  // New states for precision movement
+  const [gridSize, setGridSize] = useState(0.5); // Default 0.5 inch (half inch)
+  const [moveIncrement, setMoveIncrement] = useState(0.5); // Movement increment in inches
 
   // Refs
   const stageRef = useRef();
@@ -113,7 +122,7 @@ const DxfEditor = () => {
     return () => window.removeEventListener("resize", updateSize);
   }, []);
 
-  // Update History (Fixed)
+  // Update History
   const updateHistory = (newShapes) => {
     const newHistory = history.slice(0, historyIndex + 1);
     newHistory.push(JSON.parse(JSON.stringify(newShapes)));
@@ -160,7 +169,7 @@ const DxfEditor = () => {
     }
   };
 
-  // DXF File Upload Handler (Fixed)
+  // DXF File Upload Handler
   const handleFileUpload = (event) => {
     const file = event.target.files[0];
     if (!file) return;
@@ -201,21 +210,17 @@ const DxfEditor = () => {
       }
     };
     reader.readAsText(file);
-
-    // Reset file input
     event.target.value = null;
   };
 
-  // Enhanced DXF parser (Fixed)
+  // Enhanced DXF parser
   const parseDxfContent = (lines) => {
     const shapes = [];
     let currentShape = null;
-    let inVertex = false;
 
     for (let i = 0; i < lines.length; i++) {
       const line = lines[i].trim();
 
-      // Detect entity start
       if (line === "LINE" || line === "LWPOLYLINE" || line === "POLYLINE") {
         if (currentShape && currentShape.points.length > 0) {
           shapes.push(currentShape);
@@ -227,18 +232,14 @@ const DxfEditor = () => {
         };
       }
 
-      // Parse coordinates
       if (currentShape) {
         if (line === "10" || line === "20") {
           const x = parseFloat(lines[i + 1]) || 0;
           const y = parseFloat(lines[i + 2]) || 0;
-
-          // Scale coordinates to fit canvas (assuming DXF is in mm, scale to pixels)
           currentShape.points.push([x * 0.5 + 200, y * 0.5 + 200]);
           i += 2;
         }
 
-        // For LINE entities, also check for endpoint
         if (currentShape.type === "line" && line === "11") {
           const x = parseFloat(lines[i + 1]) || 0;
           const y = parseFloat(lines[i + 2]) || 0;
@@ -268,7 +269,7 @@ const DxfEditor = () => {
     return colors[idx % colors.length];
   };
 
-  // Scale/Resize Shape (Fixed)
+  // Scale/Resize Shape
   const handleScale = (shapeId, scaleFactor) => {
     const updatedShapes = shapes.map((shape) => {
       if (shape.id === shapeId) {
@@ -287,14 +288,16 @@ const DxfEditor = () => {
     message.success(`Shape scaled by ${scaleFactor}x`);
   };
 
-  // Drag Points (Fixed)
+  // Drag Points with custom grid snap
   const handlePointDrag = (shapeIndex, pointIndex, newPos) => {
     const updatedShapes = produce(shapes, (draft) => {
       let { x, y } = newPos;
 
       if (snapToGrid) {
-        x = Math.round(x / 20) * 20;
-        y = Math.round(y / 20) * 20;
+        // Convert grid size from inches to pixels (assuming 1 inch = 12 pixels for display)
+        const snapSize = gridSize * 12;
+        x = Math.round(x / snapSize) * snapSize;
+        y = Math.round(y / snapSize) * snapSize;
       }
 
       draft[shapeIndex].points[pointIndex] = [x, y];
@@ -307,15 +310,45 @@ const DxfEditor = () => {
     calculateMeasurements(shapes);
   };
 
-  // Add New Point to Line (Fixed)
+  // Move point with arrow keys (precision movement)
+  const movePoint = (shapeIndex, pointIndex, direction) => {
+    if (!selectedPoint) return;
+
+    const updatedShapes = produce(shapes, (draft) => {
+      const point = draft[shapeIndex].points[pointIndex];
+      // Convert move increment from inches to pixels (1 inch = 12 pixels)
+      const movePixels = moveIncrement * 12;
+
+      switch (direction) {
+        case "up":
+          point[1] -= movePixels;
+          break;
+        case "down":
+          point[1] += movePixels;
+          break;
+        case "left":
+          point[0] -= movePixels;
+          break;
+        case "right":
+          point[0] += movePixels;
+          break;
+      }
+    });
+
+    updateShapes(updatedShapes);
+    // message.success(`Moved ${moveIncrement}" ${direction}`);
+  };
+
+  // Add New Point to Line
   const addNewPoint = (shapeIndex, segmentIndex, position) => {
     const updatedShapes = produce(shapes, (draft) => {
       const shape = draft[shapeIndex];
       let { x, y } = position;
 
       if (snapToGrid) {
-        x = Math.round(x / 20) * 20;
-        y = Math.round(y / 20) * 20;
+        const snapSize = gridSize * 12;
+        x = Math.round(x / snapSize) * snapSize;
+        y = Math.round(y / snapSize) * snapSize;
       }
 
       shape.points.splice(segmentIndex + 1, 0, [x, y]);
@@ -324,7 +357,7 @@ const DxfEditor = () => {
     message.success("New point added");
   };
 
-  // Delete Point (Fixed)
+  // Delete Point
   const deletePoint = (shapeIndex, pointIndex) => {
     const shape = shapes[shapeIndex];
 
@@ -340,7 +373,7 @@ const DxfEditor = () => {
     message.success("Point deleted");
   };
 
-  // Undo/Redo System (Fixed)
+  // Undo/Redo System
   const handleUndo = () => {
     if (historyIndex > 0) {
       const prevState = history[historyIndex - 1];
@@ -365,7 +398,7 @@ const DxfEditor = () => {
     }
   };
 
-  // Calculate Area and Perimeter (Fixed)
+  // Calculate Area and Perimeter
   const calculateMeasurements = (shapeList) => {
     let totalArea = 0;
     let totalPerimeter = 0;
@@ -420,7 +453,7 @@ const DxfEditor = () => {
     return perimeter;
   };
 
-  // Update Shapes Helper (Fixed)
+  // Update Shapes Helper
   const updateShapes = (newShapes) => {
     setShapes(newShapes);
     updateHistory(newShapes);
@@ -442,7 +475,7 @@ const DxfEditor = () => {
     };
   };
 
-  // Export as Image (Fixed)
+  // Export as Image
   const exportAsImage = () => {
     if (stageRef.current) {
       const stage = stageRef.current.getStage();
@@ -459,7 +492,7 @@ const DxfEditor = () => {
     }
   };
 
-  // Delete Selected Shape (Fixed)
+  // Delete Selected Shape
   const deleteSelectedShape = () => {
     if (selectedShape) {
       const updatedShapes = shapes.filter(
@@ -467,13 +500,14 @@ const DxfEditor = () => {
       );
       updateShapes(updatedShapes);
       setSelectedShape(null);
+      setSelectedPoint(null);
       message.success("Shape deleted");
     } else {
       message.warning("Please select a shape first");
     }
   };
 
-  // Duplicate Shape (Fixed)
+  // Duplicate Shape
   const duplicateShape = () => {
     if (selectedShape) {
       const original = shapes.find((s) => s.id === selectedShape);
@@ -494,7 +528,7 @@ const DxfEditor = () => {
     }
   };
 
-  // Toggle Shape Visibility (Fixed)
+  // Toggle Shape Visibility
   const toggleShapeVisibility = (shapeId) => {
     const updatedShapes = shapes.map((shape) =>
       shape.id === shapeId ? { ...shape, visible: !shape.visible } : shape
@@ -502,7 +536,7 @@ const DxfEditor = () => {
     updateShapes(updatedShapes);
   };
 
-  // Toggle Shape Lock (Fixed)
+  // Toggle Shape Lock
   const toggleShapeLock = (shapeId) => {
     const updatedShapes = shapes.map((shape) =>
       shape.id === shapeId ? { ...shape, locked: !shape.locked } : shape
@@ -515,7 +549,7 @@ const DxfEditor = () => {
     );
   };
 
-  // Change Shape Color (Fixed)
+  // Change Shape Color
   const changeShapeColor = (shapeId, newColor) => {
     const updatedShapes = shapes.map((shape) =>
       shape.id === shapeId ? { ...shape, color: newColor } : shape
@@ -523,14 +557,14 @@ const DxfEditor = () => {
     updateShapes(updatedShapes);
   };
 
-  // Grid Generator (Fixed)
+  // Grid Generator with custom grid size
   const renderGrid = () => {
-    const gridSize = 20;
+    const gridSizePixels = gridSize * 12; // Convert inches to pixels
     const gridLines = [];
     const width = stageSize.width / scale;
     const height = stageSize.height / scale;
 
-    for (let i = 0; i < width; i += gridSize) {
+    for (let i = 0; i < width; i += gridSizePixels) {
       gridLines.push(
         <Line
           key={`v-${i}`}
@@ -542,7 +576,7 @@ const DxfEditor = () => {
       );
     }
 
-    for (let i = 0; i < height; i += gridSize) {
+    for (let i = 0; i < height; i += gridSizePixels) {
       gridLines.push(
         <Line
           key={`h-${i}`}
@@ -580,8 +614,8 @@ const DxfEditor = () => {
       {/* Left Sidebar - Tools */}
       <div className="lg:w-80 space-y-4">
         {/* File Operations */}
-        <Card title="📁 File Operations" size="small" className="shadow-md">
-          <Space orientation="vertical" className="w-full" size="small">
+        {/* <Card title="📁 File Operations" size="small" className="shadow-md">
+          <Space direction="vertical" className="w-full" size="small">
             <Button
               type="primary"
               icon={<UploadOutlined />}
@@ -623,11 +657,11 @@ const DxfEditor = () => {
               Export as PNG
             </Button>
           </Space>
-        </Card>
+        </Card> */}
 
         {/* Editing Tools */}
         <Card title="🛠️ Editing Tools" size="small" className="shadow-md">
-          <Space orientation="vertical" className="w-full" size="small">
+          <Space direction="vertical" className="w-full" size="small">
             <div className="grid grid-cols-3 gap-2">
               <Tooltip title="Select & Move">
                 <Button
@@ -657,12 +691,126 @@ const DxfEditor = () => {
           </Space>
         </Card>
 
+        {/* Precision Movement Controls */}
+        {selectedPoint && (
+          <Card
+            title="🎯 Precision Movement"
+            size="small"
+            className="shadow-md border-2 border-purple-400"
+          >
+            <Space direction="vertical" className="w-full" size="small">
+              <Alert
+                message={`Point (${Math.round(
+                  shapes[selectedPoint.shapeIndex]?.points[
+                    selectedPoint.pointIndex
+                  ][0]
+                )}, ${Math.round(
+                  shapes[selectedPoint.shapeIndex]?.points[
+                    selectedPoint.pointIndex
+                  ][1]
+                )})`}
+                type="info"
+                showIcon
+              />
+
+              <div>
+                <label className="block text-sm font-medium mb-2">
+                  Move Increment: {moveIncrement}"
+                </label>
+                <InputNumber
+                  value={moveIncrement}
+                  onChange={(value) => setMoveIncrement(value || 0.5)}
+                  min={0.1}
+                  max={12}
+                  step={0.1}
+                  style={{ width: "100%" }}
+                  addonAfter="inches"
+                />
+              </div>
+
+              <Divider style={{ margin: "8px 0" }}>Move Point</Divider>
+
+              <div className="grid grid-cols-3 gap-2">
+                <div></div>
+                <Button
+                  type="primary"
+                  icon={<ArrowUpOutlined />}
+                  onClick={() =>
+                    movePoint(
+                      selectedPoint.shapeIndex,
+                      selectedPoint.pointIndex,
+                      "up"
+                    )
+                  }
+                  block
+                  size="small"
+                >
+                  Up
+                </Button>
+                <div></div>
+
+                <Button
+                  type="primary"
+                  icon={<ArrowLeftOutlined />}
+                  onClick={() =>
+                    movePoint(
+                      selectedPoint.shapeIndex,
+                      selectedPoint.pointIndex,
+                      "left"
+                    )
+                  }
+                  block
+                  size="small"
+                >
+                  Left
+                </Button>
+                <div className="flex items-center justify-center text-xs font-medium bg-gray-100 rounded">
+                  {moveIncrement}"
+                </div>
+                <Button
+                  type="primary"
+                  icon={<ArrowRightOutlined />}
+                  onClick={() =>
+                    movePoint(
+                      selectedPoint.shapeIndex,
+                      selectedPoint.pointIndex,
+                      "right"
+                    )
+                  }
+                  block
+                  size="small"
+                >
+                  Right
+                </Button>
+
+                <div></div>
+                <Button
+                  type="primary"
+                  icon={<ArrowDownOutlined />}
+                  onClick={() =>
+                    movePoint(
+                      selectedPoint.shapeIndex,
+                      selectedPoint.pointIndex,
+                      "down"
+                    )
+                  }
+                  block
+                  size="small"
+                >
+                  Down 
+                </Button>
+                <div></div>
+              </div>
+            </Space>
+          </Card>
+        )}
+
         {/* Shape Properties */}
         <Card title="🎨 Shape Properties" size="small" className="shadow-md">
           {selectedShape ? (
             <div className="space-y-3">
               <Alert
-                title={
+                message={
                   shapes.find((s) => s.id === selectedShape)?.name || "Shape"
                 }
                 type="info"
@@ -768,7 +916,7 @@ const DxfEditor = () => {
             </div>
           ) : (
             <Alert
-              title="No shape selected"
+              message="No shape selected"
               description="Click on a shape to edit"
               type="info"
               showIcon
@@ -778,7 +926,36 @@ const DxfEditor = () => {
 
         {/* Settings */}
         <Card title="⚙️ Settings" size="small" className="shadow-md">
-          <Space orientation="vertical" className="w-full" size="small">
+          <Space direction="vertical" className="w-full" size="small">
+            <div>
+              <label className="block text-sm font-medium mb-2">
+                Grid Size: {gridSize}"
+              </label>
+              <InputNumber
+                value={gridSize}
+                onChange={(value) => setGridSize(value || 0.5)}
+                min={0.1}
+                max={12}
+                step={0.1}
+                style={{ width: "100%" }}
+                addonAfter="inches"
+              />
+              <div className="mt-2 flex gap-1 flex-wrap">
+                <Button size="small" onClick={() => setGridSize(0.25)}>
+                  1/4"
+                </Button>
+                <Button size="small" onClick={() => setGridSize(0.5)}>
+                  1/2"
+                </Button>
+                <Button size="small" onClick={() => setGridSize(1)}>
+                  1"
+                </Button>
+                <Button size="small" onClick={() => setGridSize(2)}>
+                  2"
+                </Button>
+              </div>
+            </div>
+
             <div className="flex justify-between items-center">
               <span>Show Grid</span>
               <Switch checked={gridVisible} onChange={setGridVisible} />
@@ -821,7 +998,7 @@ const DxfEditor = () => {
                 />
               </Tooltip>
 
-              <Divider orientation="vertical" />
+              <Divider type="vertical" />
 
               <Tooltip title="Zoom In">
                 <Button
@@ -848,7 +1025,7 @@ const DxfEditor = () => {
                 {Math.round(scale * 100)}%
               </span>
 
-              <Divider orientation="vertical" />
+              <Divider type="vertical" />
 
               <span className="text-sm font-medium px-3 py-1 bg-blue-100 rounded">
                 {shapes.filter((s) => s.visible).length} / {shapes.length}{" "}
@@ -861,13 +1038,13 @@ const DxfEditor = () => {
                 title="Total Area"
                 value={totalArea.toFixed(2)}
                 suffix="sq ft"
-                style={{ fontSize: "16px", color: "#1890ff" }}
+                valueStyle={{ fontSize: "16px", color: "#1890ff" }}
               />
               <Statistic
                 title="Perimeter"
                 value={totalPerimeter.toFixed(2)}
                 suffix="ft"
-                style={{ fontSize: "16px", color: "#52c41a" }}
+                valueStyle={{ fontSize: "16px", color: "#52c41a" }}
               />
             </div>
           </div>
@@ -919,46 +1096,57 @@ const DxfEditor = () => {
                         {/* Control Points */}
                         {isSelected &&
                           !isLocked &&
-                          shape.points.map((point, pointIndex) => (
-                            <Circle
-                              key={`${shape.id}-point-${pointIndex}`}
-                              x={point[0]}
-                              y={point[1]}
-                              radius={8 / scale}
-                              fill="#722ed1"
-                              stroke="#ffffff"
-                              strokeWidth={2 / scale}
-                              draggable
-                              onDragMove={(e) => {
-                                handlePointDrag(
-                                  shapeIndex,
-                                  pointIndex,
-                                  e.target.position()
-                                );
-                              }}
-                              onDragEnd={handlePointDragEnd}
-                              onMouseEnter={(e) => {
-                                const container = e.target
-                                  .getStage()
-                                  .container();
-                                container.style.cursor = "move";
-                                setSelectedPoint({ shapeIndex, pointIndex });
-                              }}
-                              onMouseLeave={(e) => {
-                                const container = e.target
-                                  .getStage()
-                                  .container();
-                                container.style.cursor = "default";
-                                setSelectedPoint(null);
-                              }}
-                              onClick={(e) => {
-                                if (toolMode === "delete-point") {
-                                  e.cancelBubble = true;
-                                  deletePoint(shapeIndex, pointIndex);
+                          shape.points.map((point, pointIndex) => {
+                            const isPointSelected =
+                              selectedPoint?.shapeIndex === shapeIndex &&
+                              selectedPoint?.pointIndex === pointIndex;
+
+                            return (
+                              <Circle
+                                key={`${shape.id}-point-${pointIndex}`}
+                                x={point[0]}
+                                y={point[1]}
+                                radius={
+                                  isPointSelected ? 10 / scale : 8 / scale
                                 }
-                              }}
-                            />
-                          ))}
+                                fill={isPointSelected ? "#f5222d" : "#722ed1"}
+                                stroke="#ffffff"
+                                strokeWidth={2 / scale}
+                                draggable
+                                onDragMove={(e) => {
+                                  handlePointDrag(
+                                    shapeIndex,
+                                    pointIndex,
+                                    e.target.position()
+                                  );
+                                }}
+                                onDragEnd={handlePointDragEnd}
+                                onMouseEnter={(e) => {
+                                  const container = e.target
+                                    .getStage()
+                                    .container();
+                                  container.style.cursor = "move";
+                                }}
+                                onMouseLeave={(e) => {
+                                  const container = e.target
+                                    .getStage()
+                                    .container();
+                                  container.style.cursor = "default";
+                                }}
+                                onClick={(e) => {
+                                  e.cancelBubble = true;
+                                  if (toolMode === "delete-point") {
+                                    deletePoint(shapeIndex, pointIndex);
+                                  } else {
+                                    setSelectedPoint({
+                                      shapeIndex,
+                                      pointIndex,
+                                    });
+                                  }
+                                }}
+                              />
+                            );
+                          })}
 
                         {/* Add Point Hit Areas */}
                         {isSelected &&
@@ -1081,8 +1269,8 @@ const DxfEditor = () => {
           <div className="mt-3 flex justify-between items-center text-sm bg-gray-50 p-3 rounded">
             <div className="font-medium">
               {selectedPoint ? (
-                <span className="text-purple-600">
-                  📍 Point: (
+                <span className="text-red-600">
+                  📍 Point Selected: (
                   {Math.round(
                     shapes[selectedPoint.shapeIndex]?.points[
                       selectedPoint.pointIndex
@@ -1094,7 +1282,7 @@ const DxfEditor = () => {
                       selectedPoint.pointIndex
                     ][1]
                   )}
-                  )
+                  ) - Use arrow buttons to move
                 </span>
               ) : selectedShape ? (
                 <span className="text-blue-600">
@@ -1112,6 +1300,9 @@ const DxfEditor = () => {
               )}
             </div>
             <div className="flex gap-4 text-gray-600">
+              <span>
+                📏 Grid: {gridSize}" | Move: {moveIncrement}"
+              </span>
               <span>
                 📊 Total Points:{" "}
                 {shapes.reduce((sum, shape) => sum + shape.points.length, 0)}
