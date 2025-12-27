@@ -1,5 +1,4 @@
 "use client";
-
 import { useState, useRef, useEffect } from "react";
 import { Stage, Layer, Line, Circle, Text, Group } from "react-konva";
 import {
@@ -7,15 +6,11 @@ import {
   Slider,
   Card,
   message,
-  Modal,
   ColorPicker,
-  InputNumber,
   Divider,
   Space,
   Tooltip,
   Switch,
-  Row,
-  Col,
   Statistic,
   Alert,
 } from "antd";
@@ -35,8 +30,6 @@ import {
   ZoomInOutlined,
   ZoomOutOutlined,
 } from "@ant-design/icons";
-import { FaVectorSquare, FaDrawPolygon } from "react-icons/fa";
-import { MdAnchor } from "react-icons/md";
 import { produce } from "immer";
 
 const initialShapes = [
@@ -74,13 +67,6 @@ const DxfEditor = () => {
   const [color, setColor] = useState("#1890ff");
   const [lineWidth, setLineWidth] = useState(2);
   const [toolMode, setToolMode] = useState("select");
-  const [uShapeModal, setUShapeModal] = useState(false);
-  const [uShapeConfig, setUShapeConfig] = useState({
-    width: 300,
-    height: 200,
-    depth: 100,
-    thickness: 20,
-  });
   const [availableDxfFiles] = useState(initialShapes);
 
   // Refs
@@ -143,7 +129,7 @@ const DxfEditor = () => {
         message.error(`Failed to load ${dxfFile.name}`);
         return;
       }
-      
+
       const text = await response.text();
       const lines = text.split("\n");
       const parsedShapes = parseDxfContent(lines);
@@ -162,7 +148,9 @@ const DxfEditor = () => {
         setShapes(newShapes);
         updateHistory(newShapes);
         calculateMeasurements(newShapes);
-        message.success(`Loaded ${parsedShapes.length} shapes from ${dxfFile.name}`);
+        message.success(
+          `Loaded ${parsedShapes.length} shapes from ${dxfFile.name}`
+        );
       } else {
         message.warning("No shapes found in DXF file");
       }
@@ -213,7 +201,7 @@ const DxfEditor = () => {
       }
     };
     reader.readAsText(file);
-    
+
     // Reset file input
     event.target.value = null;
   };
@@ -244,12 +232,12 @@ const DxfEditor = () => {
         if (line === "10" || line === "20") {
           const x = parseFloat(lines[i + 1]) || 0;
           const y = parseFloat(lines[i + 2]) || 0;
-          
+
           // Scale coordinates to fit canvas (assuming DXF is in mm, scale to pixels)
           currentShape.points.push([x * 0.5 + 200, y * 0.5 + 200]);
           i += 2;
         }
-        
+
         // For LINE entities, also check for endpoint
         if (currentShape.type === "line" && line === "11") {
           const x = parseFloat(lines[i + 1]) || 0;
@@ -264,11 +252,19 @@ const DxfEditor = () => {
       shapes.push(currentShape);
     }
 
-    return shapes.filter(s => s.points.length >= 2);
+    return shapes.filter((s) => s.points.length >= 2);
   };
 
   const getColorByIndex = (idx) => {
-    const colors = ["#1890ff", "#52c41a", "#722ed1", "#fa8c16", "#f5222d", "#13c2c2", "#eb2f96"];
+    const colors = [
+      "#1890ff",
+      "#52c41a",
+      "#722ed1",
+      "#fa8c16",
+      "#f5222d",
+      "#13c2c2",
+      "#eb2f96",
+    ];
     return colors[idx % colors.length];
   };
 
@@ -331,7 +327,7 @@ const DxfEditor = () => {
   // Delete Point (Fixed)
   const deletePoint = (shapeIndex, pointIndex) => {
     const shape = shapes[shapeIndex];
-    
+
     if (shape.points.length <= 2) {
       message.warning("Cannot delete point - minimum 2 points required");
       return;
@@ -342,44 +338,6 @@ const DxfEditor = () => {
     });
     updateShapes(updatedShapes);
     message.success("Point deleted");
-  };
-
-  // Create U-Shape (Fixed)
-  const createUShape = () => {
-    const { width, height, depth, thickness } = uShapeConfig;
-
-    // Create U-shape points with proper coordinates
-    const uShapePoints = [
-      // Outer boundary (clockwise)
-      [100, 100],
-      [100 + width, 100],
-      [100 + width, 100 + height],
-      [100, 100 + height],
-      [100, 100 + thickness],
-      [100 + depth, 100 + thickness],
-      [100 + depth, 100 + height - thickness],
-      [100 + thickness, 100 + height - thickness],
-      [100 + thickness, 100 + thickness],
-      [100, 100 + thickness],
-    ];
-
-    const newShape = {
-      id: `u-shape-${Date.now()}`,
-      type: "u-shape",
-      points: uShapePoints,
-      color: color,
-      strokeWidth: lineWidth,
-      closed: true,
-      visible: true,
-      locked: false,
-      name: `U-Shape ${shapes.length + 1}`,
-    };
-
-    const updatedShapes = [...shapes, newShape];
-    updateShapes(updatedShapes);
-    setUShapeModal(false);
-    setSelectedShape(newShape.id);
-    message.success("U-Shape created successfully");
   };
 
   // Undo/Redo System (Fixed)
@@ -434,31 +392,31 @@ const DxfEditor = () => {
   const getPolygonArea = (points) => {
     let area = 0;
     const n = points.length;
-    
+
     for (let i = 0; i < n; i++) {
       const j = (i + 1) % n;
       area += points[i][0] * points[j][1];
       area -= points[j][0] * points[i][1];
     }
-    
+
     return Math.abs(area / 2);
   };
 
   const getPolygonPerimeter = (points, closed) => {
     let perimeter = 0;
-    
+
     for (let i = 0; i < points.length - 1; i++) {
       const dx = points[i + 1][0] - points[i][0];
       const dy = points[i + 1][1] - points[i][1];
       perimeter += Math.sqrt(dx * dx + dy * dy);
     }
-    
+
     if (closed && points.length > 2) {
       const dx = points[0][0] - points[points.length - 1][0];
       const dy = points[0][1] - points[points.length - 1][1];
       perimeter += Math.sqrt(dx * dx + dy * dy);
     }
-    
+
     return perimeter;
   };
 
@@ -504,7 +462,9 @@ const DxfEditor = () => {
   // Delete Selected Shape (Fixed)
   const deleteSelectedShape = () => {
     if (selectedShape) {
-      const updatedShapes = shapes.filter((shape) => shape.id !== selectedShape);
+      const updatedShapes = shapes.filter(
+        (shape) => shape.id !== selectedShape
+      );
       updateShapes(updatedShapes);
       setSelectedShape(null);
       message.success("Shape deleted");
@@ -549,7 +509,9 @@ const DxfEditor = () => {
     );
     updateShapes(updatedShapes);
     message.success(
-      shapes.find(s => s.id === shapeId)?.locked ? "Shape unlocked" : "Shape locked"
+      shapes.find((s) => s.id === shapeId)?.locked
+        ? "Shape unlocked"
+        : "Shape locked"
     );
   };
 
@@ -613,68 +575,13 @@ const DxfEditor = () => {
     };
   };
 
-  // Create Rectangle (Fixed)
-  const createRectangle = () => {
-    const newRect = {
-      id: `rect-${Date.now()}`,
-      type: "rectangle",
-      points: [
-        [200, 200],
-        [400, 200],
-        [400, 350],
-        [200, 350],
-      ],
-      color: color,
-      strokeWidth: lineWidth,
-      closed: true,
-      visible: true,
-      locked: false,
-      name: `Rectangle ${shapes.length + 1}`,
-    };
-    updateShapes([...shapes, newRect]);
-    setSelectedShape(newRect.id);
-    message.success("Rectangle created");
-  };
-
-  // Create Polygon (Fixed)
-  const createPolygon = () => {
-    const points = [];
-    const centerX = 500,
-      centerY = 300,
-      radius = 80,
-      sides = 6;
-    
-    for (let i = 0; i < sides; i++) {
-      const angle = (i * 2 * Math.PI) / sides - Math.PI / 2;
-      points.push([
-        centerX + radius * Math.cos(angle),
-        centerY + radius * Math.sin(angle),
-      ]);
-    }
-    
-    const newPoly = {
-      id: `poly-${Date.now()}`,
-      type: "polygon",
-      points: points,
-      color: color,
-      strokeWidth: lineWidth,
-      closed: true,
-      visible: true,
-      locked: false,
-      name: `Polygon ${shapes.length + 1}`,
-    };
-    updateShapes([...shapes, newPoly]);
-    setSelectedShape(newPoly.id);
-    message.success("Polygon created");
-  };
-
   return (
     <div className="flex flex-col lg:flex-row gap-6 p-4 bg-gray-50 min-h-screen">
       {/* Left Sidebar - Tools */}
       <div className="lg:w-80 space-y-4">
         {/* File Operations */}
         <Card title="📁 File Operations" size="small" className="shadow-md">
-          <Space direction="vertical" className="w-full" size="small">
+          <Space orientation="vertical" className="w-full" size="small">
             <Button
               type="primary"
               icon={<UploadOutlined />}
@@ -720,14 +627,14 @@ const DxfEditor = () => {
 
         {/* Editing Tools */}
         <Card title="🛠️ Editing Tools" size="small" className="shadow-md">
-          <Space direction="vertical" className="w-full" size="small">
+          <Space orientation="vertical" className="w-full" size="small">
             <div className="grid grid-cols-3 gap-2">
               <Tooltip title="Select & Move">
                 <Button
                   type={toolMode === "select" ? "primary" : "default"}
                   icon={<DragOutlined />}
                   onClick={() => setToolMode("select")}
-                  style={{ height: 50 }}
+                  style={{ height: 35 }}
                 />
               </Tooltip>
               <Tooltip title="Add Point">
@@ -735,7 +642,7 @@ const DxfEditor = () => {
                   type={toolMode === "add-point" ? "primary" : "default"}
                   icon={<PlusOutlined />}
                   onClick={() => setToolMode("add-point")}
-                  style={{ height: 50 }}
+                  style={{ height: 35 }}
                 />
               </Tooltip>
               <Tooltip title="Delete Point">
@@ -743,33 +650,7 @@ const DxfEditor = () => {
                   type={toolMode === "delete-point" ? "primary" : "default"}
                   icon={<DeleteOutlined />}
                   onClick={() => setToolMode("delete-point")}
-                  style={{ height: 50 }}
-                />
-              </Tooltip>
-            </div>
-
-            <Divider style={{ margin: "8px 0" }}>Create Shapes</Divider>
-
-            <div className="grid grid-cols-3 gap-2">
-              <Tooltip title="Rectangle">
-                <Button
-                  icon={<FaVectorSquare />}
-                  onClick={createRectangle}
-                  style={{ height: 50 }}
-                />
-              </Tooltip>
-              <Tooltip title="Polygon">
-                <Button
-                  icon={<FaDrawPolygon />}
-                  onClick={createPolygon}
-                  style={{ height: 50 }}
-                />
-              </Tooltip>
-              <Tooltip title="U-Shape">
-                <Button
-                  icon={<MdAnchor />}
-                  onClick={() => setUShapeModal(true)}
-                  style={{ height: 50 }}
+                  style={{ height: 35 }}
                 />
               </Tooltip>
             </div>
@@ -781,7 +662,9 @@ const DxfEditor = () => {
           {selectedShape ? (
             <div className="space-y-3">
               <Alert
-                message={shapes.find((s) => s.id === selectedShape)?.name || "Shape"}
+                title={
+                  shapes.find((s) => s.id === selectedShape)?.name || "Shape"
+                }
                 type="info"
                 showIcon
               />
@@ -789,7 +672,9 @@ const DxfEditor = () => {
               <div>
                 <label className="block text-sm font-medium mb-2">Color</label>
                 <ColorPicker
-                  value={shapes.find((s) => s.id === selectedShape)?.color || color}
+                  value={
+                    shapes.find((s) => s.id === selectedShape)?.color || color
+                  }
                   onChange={(_, hex) => changeShapeColor(selectedShape, hex)}
                   showText
                   style={{ width: "100%" }}
@@ -798,15 +683,22 @@ const DxfEditor = () => {
 
               <div>
                 <label className="block text-sm font-medium mb-2">
-                  Line Width: {shapes.find((s) => s.id === selectedShape)?.strokeWidth || lineWidth}
+                  Line Width:{" "}
+                  {shapes.find((s) => s.id === selectedShape)?.strokeWidth ||
+                    lineWidth}
                 </label>
                 <Slider
                   min={1}
                   max={10}
-                  value={shapes.find((s) => s.id === selectedShape)?.strokeWidth || lineWidth}
+                  value={
+                    shapes.find((s) => s.id === selectedShape)?.strokeWidth ||
+                    lineWidth
+                  }
                   onChange={(value) => {
                     const updatedShapes = shapes.map((shape) =>
-                      shape.id === selectedShape ? { ...shape, strokeWidth: value } : shape
+                      shape.id === selectedShape
+                        ? { ...shape, strokeWidth: value }
+                        : shape
                     );
                     updateShapes(updatedShapes);
                   }}
@@ -842,7 +734,9 @@ const DxfEditor = () => {
                   onClick={() => toggleShapeVisibility(selectedShape)}
                   block
                 >
-                  {shapes.find((s) => s.id === selectedShape)?.visible ? "Hide" : "Show"}
+                  {shapes.find((s) => s.id === selectedShape)?.visible
+                    ? "Hide"
+                    : "Show"}
                 </Button>
                 <Button
                   icon={
@@ -855,24 +749,36 @@ const DxfEditor = () => {
                   onClick={() => toggleShapeLock(selectedShape)}
                   block
                 >
-                  {shapes.find((s) => s.id === selectedShape)?.locked ? "Unlock" : "Lock"}
+                  {shapes.find((s) => s.id === selectedShape)?.locked
+                    ? "Unlock"
+                    : "Lock"}
                 </Button>
                 <Button icon={<CopyOutlined />} onClick={duplicateShape} block>
                   Duplicate
                 </Button>
-                <Button danger icon={<DeleteOutlined />} onClick={deleteSelectedShape} block>
+                <Button
+                  danger
+                  icon={<DeleteOutlined />}
+                  onClick={deleteSelectedShape}
+                  block
+                >
                   Delete
                 </Button>
               </div>
             </div>
           ) : (
-            <Alert message="No shape selected" description="Click on a shape to edit" type="info" showIcon />
+            <Alert
+              title="No shape selected"
+              description="Click on a shape to edit"
+              type="info"
+              showIcon
+            />
           )}
         </Card>
 
         {/* Settings */}
         <Card title="⚙️ Settings" size="small" className="shadow-md">
-          <Space direction="vertical" className="w-full" size="small">
+          <Space orientation="vertical" className="w-full" size="small">
             <div className="flex justify-between items-center">
               <span>Show Grid</span>
               <Switch checked={gridVisible} onChange={setGridVisible} />
@@ -883,24 +789,10 @@ const DxfEditor = () => {
             </div>
             <div className="flex justify-between items-center">
               <span>Show Measurements</span>
-              <Switch checked={showMeasurements} onChange={setShowMeasurements} />
-            </div>
-
-            <Divider style={{ margin: "8px 0" }} />
-
-            <div>
-              <label className="block text-sm font-medium mb-2">Default Color</label>
-              <ColorPicker
-                value={color}
-                onChange={(_, hex) => setColor(hex)}
-                showText
-                style={{ width: "100%" }}
+              <Switch
+                checked={showMeasurements}
+                onChange={setShowMeasurements}
               />
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium mb-2">Default Line Width: {lineWidth}</label>
-              <Slider min={1} max={10} value={lineWidth} onChange={setLineWidth} />
             </div>
           </Space>
         </Card>
@@ -929,7 +821,7 @@ const DxfEditor = () => {
                 />
               </Tooltip>
 
-              <Divider type="vertical" />
+              <Divider orientation="vertical" />
 
               <Tooltip title="Zoom In">
                 <Button
@@ -956,10 +848,11 @@ const DxfEditor = () => {
                 {Math.round(scale * 100)}%
               </span>
 
-              <Divider type="vertical" />
+              <Divider orientation="vertical" />
 
               <span className="text-sm font-medium px-3 py-1 bg-blue-100 rounded">
-                {shapes.filter((s) => s.visible).length} / {shapes.length} shapes
+                {shapes.filter((s) => s.visible).length} / {shapes.length}{" "}
+                shapes
               </span>
             </div>
 
@@ -968,13 +861,13 @@ const DxfEditor = () => {
                 title="Total Area"
                 value={totalArea.toFixed(2)}
                 suffix="sq ft"
-                valueStyle={{ fontSize: "16px", color: "#1890ff" }}
+                style={{ fontSize: "16px", color: "#1890ff" }}
               />
               <Statistic
                 title="Perimeter"
                 value={totalPerimeter.toFixed(2)}
                 suffix="ft"
-                valueStyle={{ fontSize: "16px", color: "#52c41a" }}
+                style={{ fontSize: "16px", color: "#52c41a" }}
               />
             </div>
           </div>
@@ -1011,52 +904,77 @@ const DxfEditor = () => {
                           strokeWidth={(shape.strokeWidth || lineWidth) / scale}
                           closed={shape.closed}
                           dash={isLocked ? [10 / scale, 5 / scale] : undefined}
-                          fill={shape.closed && isSelected ? `${shape.color}20` : undefined}
-                          onClick={() => !isLocked && setSelectedShape(shape.id)}
+                          fill={
+                            shape.closed && isSelected
+                              ? `${shape.color}20`
+                              : undefined
+                          }
+                          onClick={() =>
+                            !isLocked && setSelectedShape(shape.id)
+                          }
                           onTap={() => !isLocked && setSelectedShape(shape.id)}
                           listening={!isLocked}
                         />
 
                         {/* Control Points */}
-                        {isSelected && !isLocked && shape.points.map((point, pointIndex) => (
-                          <Circle
-                            key={`${shape.id}-point-${pointIndex}`}
-                            x={point[0]}
-                            y={point[1]}
-                            radius={8 / scale}
-                            fill="#722ed1"
-                            stroke="#ffffff"
-                            strokeWidth={2 / scale}
-                            draggable
-                            onDragMove={(e) => {
-                              handlePointDrag(shapeIndex, pointIndex, e.target.position());
-                            }}
-                            onDragEnd={handlePointDragEnd}
-                            onMouseEnter={(e) => {
-                              const container = e.target.getStage().container();
-                              container.style.cursor = "move";
-                              setSelectedPoint({ shapeIndex, pointIndex });
-                            }}
-                            onMouseLeave={(e) => {
-                              const container = e.target.getStage().container();
-                              container.style.cursor = "default";
-                              setSelectedPoint(null);
-                            }}
-                            onClick={(e) => {
-                              if (toolMode === "delete-point") {
-                                e.cancelBubble = true;
-                                deletePoint(shapeIndex, pointIndex);
-                              }
-                            }}
-                          />
-                        ))}
+                        {isSelected &&
+                          !isLocked &&
+                          shape.points.map((point, pointIndex) => (
+                            <Circle
+                              key={`${shape.id}-point-${pointIndex}`}
+                              x={point[0]}
+                              y={point[1]}
+                              radius={8 / scale}
+                              fill="#722ed1"
+                              stroke="#ffffff"
+                              strokeWidth={2 / scale}
+                              draggable
+                              onDragMove={(e) => {
+                                handlePointDrag(
+                                  shapeIndex,
+                                  pointIndex,
+                                  e.target.position()
+                                );
+                              }}
+                              onDragEnd={handlePointDragEnd}
+                              onMouseEnter={(e) => {
+                                const container = e.target
+                                  .getStage()
+                                  .container();
+                                container.style.cursor = "move";
+                                setSelectedPoint({ shapeIndex, pointIndex });
+                              }}
+                              onMouseLeave={(e) => {
+                                const container = e.target
+                                  .getStage()
+                                  .container();
+                                container.style.cursor = "default";
+                                setSelectedPoint(null);
+                              }}
+                              onClick={(e) => {
+                                if (toolMode === "delete-point") {
+                                  e.cancelBubble = true;
+                                  deletePoint(shapeIndex, pointIndex);
+                                }
+                              }}
+                            />
+                          ))}
 
                         {/* Add Point Hit Areas */}
-                        {isSelected && !isLocked && toolMode === "add-point" &&
+                        {isSelected &&
+                          !isLocked &&
+                          toolMode === "add-point" &&
                           shape.points.map((point, segmentIndex) => {
-                            if (segmentIndex === shape.points.length - 1 && !shape.closed) return null;
-                            
-                            const nextPoint = shape.points[(segmentIndex + 1) % shape.points.length];
+                            if (
+                              segmentIndex === shape.points.length - 1 &&
+                              !shape.closed
+                            )
+                              return null;
+
+                            const nextPoint =
+                              shape.points[
+                                (segmentIndex + 1) % shape.points.length
+                              ];
                             const midX = (point[0] + nextPoint[0]) / 2;
                             const midY = (point[1] + nextPoint[1]) / 2;
 
@@ -1070,9 +988,16 @@ const DxfEditor = () => {
                                     e.cancelBubble = true;
                                     const stage = e.target.getStage();
                                     const pos = stage.getPointerPosition();
-                                    const transform = stage.getAbsoluteTransform().copy().invert();
+                                    const transform = stage
+                                      .getAbsoluteTransform()
+                                      .copy()
+                                      .invert();
                                     const relativePos = transform.point(pos);
-                                    addNewPoint(shapeIndex, segmentIndex, relativePos);
+                                    addNewPoint(
+                                      shapeIndex,
+                                      segmentIndex,
+                                      relativePos
+                                    );
                                   }}
                                 />
                                 <Circle
@@ -1093,9 +1018,14 @@ const DxfEditor = () => {
                         {showMeasurements &&
                           isSelected &&
                           shape.points.map((point, idx) => {
-                            if (idx === shape.points.length - 1 && !shape.closed) return null;
-                            
-                            const nextPoint = shape.points[(idx + 1) % shape.points.length];
+                            if (
+                              idx === shape.points.length - 1 &&
+                              !shape.closed
+                            )
+                              return null;
+
+                            const nextPoint =
+                              shape.points[(idx + 1) % shape.points.length];
                             const midX = (point[0] + nextPoint[0]) / 2;
                             const midY = (point[1] + nextPoint[1]) / 2;
                             const distance = Math.sqrt(
@@ -1152,8 +1082,19 @@ const DxfEditor = () => {
             <div className="font-medium">
               {selectedPoint ? (
                 <span className="text-purple-600">
-                  📍 Point: ({Math.round(shapes[selectedPoint.shapeIndex]?.points[selectedPoint.pointIndex][0])}, 
-                  {Math.round(shapes[selectedPoint.shapeIndex]?.points[selectedPoint.pointIndex][1])})
+                  📍 Point: (
+                  {Math.round(
+                    shapes[selectedPoint.shapeIndex]?.points[
+                      selectedPoint.pointIndex
+                    ][0]
+                  )}
+                  ,
+                  {Math.round(
+                    shapes[selectedPoint.shapeIndex]?.points[
+                      selectedPoint.pointIndex
+                    ][1]
+                  )}
+                  )
                 </span>
               ) : selectedShape ? (
                 <span className="text-blue-600">
@@ -1161,13 +1102,19 @@ const DxfEditor = () => {
                 </span>
               ) : (
                 <span className="text-gray-500">
-                  ℹ️ Mode: {toolMode === "select" ? "Select & Move" : toolMode === "add-point" ? "Add Point" : "Delete Point"}
+                  ℹ️ Mode:{" "}
+                  {toolMode === "select"
+                    ? "Select & Move"
+                    : toolMode === "add-point"
+                    ? "Add Point"
+                    : "Delete Point"}
                 </span>
               )}
             </div>
             <div className="flex gap-4 text-gray-600">
               <span>
-                📊 Total Points: {shapes.reduce((sum, shape) => sum + shape.points.length, 0)}
+                📊 Total Points:{" "}
+                {shapes.reduce((sum, shape) => sum + shape.points.length, 0)}
               </span>
               <span>
                 📜 History: {historyIndex + 1} / {history.length}
@@ -1175,175 +1122,7 @@ const DxfEditor = () => {
             </div>
           </div>
         </Card>
-
-        {/* Shape List */}
-        <Card title="📋 Shape List" className="mt-4 shadow-md">
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead className="bg-gray-100">
-                <tr>
-                  <th className="p-3 text-left font-semibold">Name</th>
-                  <th className="p-3 text-left font-semibold">Type</th>
-                  <th className="p-3 text-left font-semibold">Points</th>
-                  <th className="p-3 text-left font-semibold">Color</th>
-                  <th className="p-3 text-left font-semibold">Status</th>
-                  <th className="p-3 text-left font-semibold">Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                {shapes.map((shape) => (
-                  <tr
-                    key={shape.id}
-                    className={`border-t hover:bg-gray-50 transition-colors ${
-                      shape.id === selectedShape ? "bg-purple-50" : ""
-                    }`}
-                  >
-                    <td className="p-3">{shape.name || `Shape ${shape.id.substring(0, 8)}`}</td>
-                    <td className="p-3 capitalize">{shape.type}</td>
-                    <td className="p-3 text-center font-mono">{shape.points.length}</td>
-                    <td className="p-3">
-                      <div
-                        className="w-8 h-8 rounded border-2 border-gray-300 shadow-sm"
-                        style={{ backgroundColor: shape.color }}
-                      />
-                    </td>
-                    <td className="p-3">
-                      <div className="flex gap-1">
-                        {shape.visible ? (
-                          <span className="px-2 py-1 bg-green-100 text-green-700 rounded text-xs">Visible</span>
-                        ) : (
-                          <span className="px-2 py-1 bg-gray-100 text-gray-600 rounded text-xs">Hidden</span>
-                        )}
-                        {shape.locked && (
-                          <span className="px-2 py-1 bg-red-100 text-red-700 rounded text-xs">Locked</span>
-                        )}
-                      </div>
-                    </td>
-                    <td className="p-3">
-                      <Space size="small">
-                        <Button
-                          size="small"
-                          type={shape.id === selectedShape ? "primary" : "default"}
-                          onClick={() => setSelectedShape(shape.id)}
-                        >
-                          Select
-                        </Button>
-                        <Button
-                          size="small"
-                          icon={shape.visible ? <EyeOutlined /> : <EyeInvisibleOutlined />}
-                          onClick={() => toggleShapeVisibility(shape.id)}
-                        />
-                        <Button
-                          size="small"
-                          icon={shape.locked ? <LockOutlined /> : <UnlockOutlined />}
-                          onClick={() => toggleShapeLock(shape.id)}
-                        />
-                      </Space>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </Card>
       </div>
-
-      {/* U-Shape Creation Modal */}
-      <Modal
-        title="🔧 Create Custom U-Shape"
-        open={uShapeModal}
-        onCancel={() => setUShapeModal(false)}
-        onOk={createUShape}
-        okText="Create U-Shape"
-        cancelText="Cancel"
-        width={600}
-      >
-        <div className="space-y-4 py-4">
-          <Alert
-            message="Design a custom U-shaped profile"
-            description="Adjust dimensions to create your perfect U-shape"
-            type="info"
-            showIcon
-          />
-
-          <Row gutter={16}>
-            <Col span={12}>
-              <label className="block mb-2 font-medium">Width (px)</label>
-              <InputNumber
-                value={uShapeConfig.width}
-                onChange={(value) => setUShapeConfig((prev) => ({ ...prev, width: value || 100 }))}
-                style={{ width: "100%" }}
-                min={50}
-                max={1000}
-                size="large"
-              />
-            </Col>
-            <Col span={12}>
-              <label className="block mb-2 font-medium">Height (px)</label>
-              <InputNumber
-                value={uShapeConfig.height}
-                onChange={(value) => setUShapeConfig((prev) => ({ ...prev, height: value || 100 }))}
-                style={{ width: "100%" }}
-                min={50}
-                max={1000}
-                size="large"
-              />
-            </Col>
-          </Row>
-
-          <Row gutter={16}>
-            <Col span={12}>
-              <label className="block mb-2 font-medium">Depth (px)</label>
-              <InputNumber
-                value={uShapeConfig.depth}
-                onChange={(value) => setUShapeConfig((prev) => ({ ...prev, depth: value || 50 }))}
-                style={{ width: "100%" }}
-                min={20}
-                max={500}
-                size="large"
-              />
-            </Col>
-            <Col span={12}>
-              <label className="block mb-2 font-medium">Thickness (px)</label>
-              <InputNumber
-                value={uShapeConfig.thickness}
-                onChange={(value) => setUShapeConfig((prev) => ({ ...prev, thickness: value || 10 }))}
-                style={{ width: "100%" }}
-                min={5}
-                max={100}
-                size="large"
-              />
-            </Col>
-          </Row>
-
-          <div className="bg-gradient-to-r from-blue-50 to-purple-50 p-4 rounded-lg mt-4">
-            <p className="font-semibold mb-3 text-lg">📊 Calculated Values:</p>
-            <div className="grid grid-cols-2 gap-4">
-              <Statistic
-                title="Estimated Area"
-                value={(
-                  (uShapeConfig.width * uShapeConfig.height -
-                    (uShapeConfig.width - 2 * uShapeConfig.thickness) *
-                      (uShapeConfig.height - uShapeConfig.thickness)) /
-                  144
-                ).toFixed(2)}
-                suffix="sq ft"
-                valueStyle={{ color: "#1890ff" }}
-              />
-              <Statistic
-                title="Estimated Perimeter"
-                value={(
-                  (2 * uShapeConfig.width +
-                    4 * uShapeConfig.height) /
-                  12
-                ).toFixed(2)}
-                suffix="ft"
-                valueStyle={{ color: "#52c41a" }}
-              />
-            </div>
-          </div>
-        </div>
-      </Modal>
     </div>
   );
 };
