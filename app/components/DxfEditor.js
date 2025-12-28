@@ -5,55 +5,33 @@ import {
   Button,
   Slider,
   Card,
-  message,
-  ColorPicker,
   Divider,
   Space,
   Tooltip,
   Switch,
-  Statistic,
   Alert,
   InputNumber,
 } from "antd";
 import {
-  UndoOutlined,
-  RedoOutlined,
-  UploadOutlined,
   PlusOutlined,
   DragOutlined,
   DeleteOutlined,
   CopyOutlined,
-  DownloadOutlined,
   EyeOutlined,
   EyeInvisibleOutlined,
   LockOutlined,
   UnlockOutlined,
-  ZoomInOutlined,
-  ZoomOutOutlined,
   ArrowUpOutlined,
   ArrowDownOutlined,
   ArrowLeftOutlined,
   ArrowRightOutlined,
+  AimOutlined,
 } from "@ant-design/icons";
 import { produce } from "immer";
-
-const initialShapes = [
-  {
-    id: 1,
-    name: "PLAAT 1",
-    file: "/PLAAT1.dxf",
-  },
-  {
-    id: 2,
-    name: "PLAAT 2",
-    file: "/PLAAT2.dxf",
-  },
-  {
-    id: 3,
-    name: "PLAAT 3",
-    file: "/PLAAT3.dxf",
-  },
-];
+import FileOperations from "./FileOperations";
+import { showToast } from "nextjs-toast-notify";
+import StatusBar from "./StatusBar";
+import MainToolbar from "./MainToolbar";
 
 const DxfEditor = () => {
   // State Management
@@ -69,14 +47,10 @@ const DxfEditor = () => {
   const [snapToGrid, setSnapToGrid] = useState(true);
   const [showMeasurements, setShowMeasurements] = useState(true);
   const [stageSize, setStageSize] = useState({ width: 1200, height: 700 });
-  const [color, setColor] = useState("#1890ff");
   const [lineWidth, setLineWidth] = useState(2);
   const [toolMode, setToolMode] = useState("select");
-  const [availableDxfFiles] = useState(initialShapes);
-
-  // New states for precision movement
-  const [gridSize, setGridSize] = useState(0.5); // Default 0.5 inch (half inch)
-  const [moveIncrement, setMoveIncrement] = useState(0.5); // Movement increment in inches
+  const [gridSize, setGridSize] = useState(0.5);
+  const [moveIncrement, setMoveIncrement] = useState(0.5);
 
   // Refs
   const stageRef = useRef();
@@ -122,6 +96,13 @@ const DxfEditor = () => {
     return () => window.removeEventListener("resize", updateSize);
   }, []);
 
+  // Clear selected point when tool mode changes (except select-point)
+  useEffect(() => {
+    if (toolMode !== "select-point") {
+      setSelectedPoint(null);
+    }
+  }, [toolMode]);
+
   // Update History
   const updateHistory = (newShapes) => {
     const newHistory = history.slice(0, historyIndex + 1);
@@ -130,143 +111,13 @@ const DxfEditor = () => {
     setHistoryIndex(newHistory.length - 1);
   };
 
-  // Load DXF File from predefined list
-  const loadPredefinedDxf = async (dxfFile) => {
-    try {
-      const response = await fetch(dxfFile.file);
-      if (!response.ok) {
-        message.error(`Failed to load ${dxfFile.name}`);
-        return;
-      }
-
-      const text = await response.text();
-      const lines = text.split("\n");
-      const parsedShapes = parseDxfContent(lines);
-
-      if (parsedShapes.length > 0) {
-        const newShapes = parsedShapes.map((shape, idx) => ({
-          ...shape,
-          id: `dxf-${Date.now()}-${idx}`,
-          color: getColorByIndex(idx),
-          strokeWidth: lineWidth,
-          visible: true,
-          locked: false,
-          name: `${dxfFile.name} - Shape ${idx + 1}`,
-        }));
-
-        setShapes(newShapes);
-        updateHistory(newShapes);
-        calculateMeasurements(newShapes);
-        message.success(
-          `Loaded ${parsedShapes.length} shapes from ${dxfFile.name}`
-        );
-      } else {
-        message.warning("No shapes found in DXF file");
-      }
-    } catch (error) {
-      message.error("Error loading DXF file");
-      console.error("DXF Load Error:", error);
-    }
-  };
-
-  // DXF File Upload Handler
-  const handleFileUpload = (event) => {
-    const file = event.target.files[0];
-    if (!file) return;
-
-    if (!file.name.endsWith(".dxf")) {
-      message.error("Please upload a .dxf file");
-      return;
-    }
-
-    const reader = new FileReader();
-    reader.onload = (e) => {
-      try {
-        const text = e.target.result;
-        const lines = text.split("\n");
-        const parsedShapes = parseDxfContent(lines);
-
-        if (parsedShapes.length > 0) {
-          const newShapes = parsedShapes.map((shape, idx) => ({
-            ...shape,
-            id: `dxf-${Date.now()}-${idx}`,
-            color: getColorByIndex(idx),
-            strokeWidth: lineWidth,
-            visible: true,
-            locked: false,
-            name: `Uploaded Shape ${idx + 1}`,
-          }));
-
-          setShapes(newShapes);
-          updateHistory(newShapes);
-          calculateMeasurements(newShapes);
-          message.success(`Loaded ${parsedShapes.length} shapes from DXF file`);
-        } else {
-          message.warning("No shapes found in DXF file");
-        }
-      } catch (error) {
-        message.error("Error parsing DXF file");
-        console.error("DXF Parse Error:", error);
-      }
-    };
-    reader.readAsText(file);
-    event.target.value = null;
-  };
-
-  // Enhanced DXF parser
-  const parseDxfContent = (lines) => {
-    const shapes = [];
-    let currentShape = null;
-
-    for (let i = 0; i < lines.length; i++) {
-      const line = lines[i].trim();
-
-      if (line === "LINE" || line === "LWPOLYLINE" || line === "POLYLINE") {
-        if (currentShape && currentShape.points.length > 0) {
-          shapes.push(currentShape);
-        }
-        currentShape = {
-          type: line === "LINE" ? "line" : "polyline",
-          points: [],
-          closed: line !== "LINE",
-        };
-      }
-
-      if (currentShape) {
-        if (line === "10" || line === "20") {
-          const x = parseFloat(lines[i + 1]) || 0;
-          const y = parseFloat(lines[i + 2]) || 0;
-          currentShape.points.push([x * 0.5 + 200, y * 0.5 + 200]);
-          i += 2;
-        }
-
-        if (currentShape.type === "line" && line === "11") {
-          const x = parseFloat(lines[i + 1]) || 0;
-          const y = parseFloat(lines[i + 2]) || 0;
-          currentShape.points.push([x * 0.5 + 200, y * 0.5 + 200]);
-          i += 2;
-        }
-      }
-    }
-
-    if (currentShape && currentShape.points.length > 0) {
-      shapes.push(currentShape);
-    }
-
-    return shapes.filter((s) => s.points.length >= 2);
-  };
-
-  const getColorByIndex = (idx) => {
-    const colors = [
-      "#1890ff",
-      "#52c41a",
-      "#722ed1",
-      "#fa8c16",
-      "#f5222d",
-      "#13c2c2",
-      "#eb2f96",
-    ];
-    return colors[idx % colors.length];
+  // Handler for when shapes are loaded from FileOperations
+  const handleShapesLoaded = (newShapes) => {
+    setShapes(newShapes);
+    updateHistory(newShapes);
+    calculateMeasurements(newShapes);
+    setSelectedShape(null);
+    setSelectedPoint(null);
   };
 
   // Scale/Resize Shape
@@ -285,7 +136,7 @@ const DxfEditor = () => {
       return shape;
     });
     updateShapes(updatedShapes);
-    message.success(`Shape scaled by ${scaleFactor}x`);
+    showToast.success(`Shape scaled by ${scaleFactor}x`, { duration: 2000 });
   };
 
   // Drag Points with custom grid snap
@@ -294,7 +145,6 @@ const DxfEditor = () => {
       let { x, y } = newPos;
 
       if (snapToGrid) {
-        // Convert grid size from inches to pixels (assuming 1 inch = 12 pixels for display)
         const snapSize = gridSize * 12;
         x = Math.round(x / snapSize) * snapSize;
         y = Math.round(y / snapSize) * snapSize;
@@ -313,12 +163,9 @@ const DxfEditor = () => {
   // Move point with arrow keys (precision movement)
   const movePoint = (shapeIndex, pointIndex, direction) => {
     if (!selectedPoint) return;
-
     const updatedShapes = produce(shapes, (draft) => {
       const point = draft[shapeIndex].points[pointIndex];
-      // Convert move increment from inches to pixels (1 inch = 12 pixels)
       const movePixels = moveIncrement * 12;
-
       switch (direction) {
         case "up":
           point[1] -= movePixels;
@@ -334,9 +181,7 @@ const DxfEditor = () => {
           break;
       }
     });
-
     updateShapes(updatedShapes);
-    // message.success(`Moved ${moveIncrement}" ${direction}`);
   };
 
   // Add New Point to Line
@@ -354,15 +199,17 @@ const DxfEditor = () => {
       shape.points.splice(segmentIndex + 1, 0, [x, y]);
     });
     updateShapes(updatedShapes);
-    message.success("New point added");
+    showToast.success("New point added", { duration: 2000 });
   };
 
   // Delete Point
   const deletePoint = (shapeIndex, pointIndex) => {
     const shape = shapes[shapeIndex];
 
-    if (shape.points.length <= 2) {
-      message.warning("Cannot delete point - minimum 2 points required");
+    if (shape.points.length <= 3) {
+      showToast.warning("Cannot delete point - minimum 3 points required", {
+        duration: 2000,
+      });
       return;
     }
 
@@ -370,32 +217,7 @@ const DxfEditor = () => {
       draft[shapeIndex].points.splice(pointIndex, 1);
     });
     updateShapes(updatedShapes);
-    message.success("Point deleted");
-  };
-
-  // Undo/Redo System
-  const handleUndo = () => {
-    if (historyIndex > 0) {
-      const prevState = history[historyIndex - 1];
-      setShapes(prevState);
-      setHistoryIndex(historyIndex - 1);
-      calculateMeasurements(prevState);
-      message.success("Undo successful");
-    } else {
-      message.warning("Nothing to undo");
-    }
-  };
-
-  const handleRedo = () => {
-    if (historyIndex < history.length - 1) {
-      const nextState = history[historyIndex + 1];
-      setShapes(nextState);
-      setHistoryIndex(historyIndex + 1);
-      calculateMeasurements(nextState);
-      message.success("Redo successful");
-    } else {
-      message.warning("Nothing to redo");
-    }
+    showToast.success("Point deleted", { duration: 2000 });
   };
 
   // Calculate Area and Perimeter
@@ -414,7 +236,6 @@ const DxfEditor = () => {
       }
     });
 
-    // Convert to square feet (assuming 1 unit = 1 inch)
     const areaSqFt = totalArea / 144;
     const perimeterFt = totalPerimeter / 12;
 
@@ -475,23 +296,6 @@ const DxfEditor = () => {
     };
   };
 
-  // Export as Image
-  const exportAsImage = () => {
-    if (stageRef.current) {
-      const stage = stageRef.current.getStage();
-      const dataURL = stage.toDataURL({ pixelRatio: 2 });
-
-      const link = document.createElement("a");
-      link.download = `dxf-editor-${Date.now()}.png`;
-      link.href = dataURL;
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-
-      message.success("Exported as PNG image");
-    }
-  };
-
   // Delete Selected Shape
   const deleteSelectedShape = () => {
     if (selectedShape) {
@@ -501,9 +305,9 @@ const DxfEditor = () => {
       updateShapes(updatedShapes);
       setSelectedShape(null);
       setSelectedPoint(null);
-      message.success("Shape deleted");
+      showToast.success("Shape deleted", { duration: 2000 });
     } else {
-      message.warning("Please select a shape first");
+      showToast.warning("Please select a shape first", { duration: 2000 });
     }
   };
 
@@ -521,10 +325,10 @@ const DxfEditor = () => {
         const updatedShapes = [...shapes, duplicated];
         updateShapes(updatedShapes);
         setSelectedShape(duplicated.id);
-        message.success("Shape duplicated");
+        showToast.success("Shape duplicated", { duration: 2000 });
       }
     } else {
-      message.warning("Please select a shape first");
+      showToast.warning("Please select a shape first", { duration: 2000 });
     }
   };
 
@@ -542,24 +346,17 @@ const DxfEditor = () => {
       shape.id === shapeId ? { ...shape, locked: !shape.locked } : shape
     );
     updateShapes(updatedShapes);
-    message.success(
+    showToast.success(
       shapes.find((s) => s.id === shapeId)?.locked
         ? "Shape unlocked"
-        : "Shape locked"
+        : "Shape locked",
+      { duration: 2000 }
     );
-  };
-
-  // Change Shape Color
-  const changeShapeColor = (shapeId, newColor) => {
-    const updatedShapes = shapes.map((shape) =>
-      shape.id === shapeId ? { ...shape, color: newColor } : shape
-    );
-    updateShapes(updatedShapes);
   };
 
   // Grid Generator with custom grid size
   const renderGrid = () => {
-    const gridSizePixels = gridSize * 12; // Convert inches to pixels
+    const gridSizePixels = gridSize * 12;
     const gridLines = [];
     const width = stageSize.width / scale;
     const height = stageSize.height / scale;
@@ -609,65 +406,54 @@ const DxfEditor = () => {
     };
   };
 
+  // Handle point click based on tool mode
+  const handlePointClick = (e, shapeIndex, pointIndex) => {
+    e.cancelBubble = true;
+
+    if (toolMode === "delete-point") {
+      deletePoint(shapeIndex, pointIndex);
+    } else if (toolMode === "select-point") {
+      // Toggle selection - if same point clicked, deselect it
+      if (
+        selectedPoint?.shapeIndex === shapeIndex &&
+        selectedPoint?.pointIndex === pointIndex
+      ) {
+        setSelectedPoint(null);
+      } else {
+        setSelectedPoint({ shapeIndex, pointIndex });
+      }
+    }
+    // For other modes (select, add-point), do nothing on point click
+  };
+
   return (
     <div className="flex flex-col lg:flex-row gap-6 p-4 bg-gray-50 min-h-screen">
       {/* Left Sidebar - Tools */}
       <div className="lg:w-80 space-y-4">
-        {/* File Operations */}
-        {/* <Card title="📁 File Operations" size="small" className="shadow-md">
-          <Space direction="vertical" className="w-full" size="small">
-            <Button
-              type="primary"
-              icon={<UploadOutlined />}
-              onClick={() => fileInputRef.current?.click()}
-              block
-              size="large"
-            >
-              Upload DXF File
-            </Button>
-            <input
-              type="file"
-              ref={fileInputRef}
-              onChange={handleFileUpload}
-              accept=".dxf"
-              className="hidden"
-            />
-
-            <Divider style={{ margin: "8px 0" }}>or load predefined</Divider>
-
-            {availableDxfFiles.map((dxfFile) => (
-              <Button
-                key={dxfFile.id}
-                onClick={() => loadPredefinedDxf(dxfFile)}
-                block
-                icon={<UploadOutlined />}
-              >
-                {dxfFile.name}
-              </Button>
-            ))}
-
-            <Divider style={{ margin: "8px 0" }} />
-
-            <Button
-              icon={<DownloadOutlined />}
-              onClick={exportAsImage}
-              block
-              size="large"
-            >
-              Export as PNG
-            </Button>
-          </Space>
-        </Card> */}
+        {/* File Operations - Now using separate component */}
+        <FileOperations
+          stageRef={stageRef}
+          fileInputRef={fileInputRef}
+          onShapesLoaded={handleShapesLoaded}
+        />
 
         {/* Editing Tools */}
         <Card title="🛠️ Editing Tools" size="small" className="shadow-md">
-          <Space direction="vertical" className="w-full" size="small">
-            <div className="grid grid-cols-3 gap-2">
-              <Tooltip title="Select & Move">
+          <Space orientation="vertical" className="w-full" size="small">
+            <div className="grid grid-cols-4 gap-2">
+              <Tooltip title="Select & Move Shape">
                 <Button
                   type={toolMode === "select" ? "primary" : "default"}
                   icon={<DragOutlined />}
                   onClick={() => setToolMode("select")}
+                  style={{ height: 35 }}
+                />
+              </Tooltip>
+              <Tooltip title="Select Point">
+                <Button
+                  type={toolMode === "select-point" ? "primary" : "default"}
+                  icon={<AimOutlined />}
+                  onClick={() => setToolMode("select-point")}
                   style={{ height: 35 }}
                 />
               </Tooltip>
@@ -688,19 +474,31 @@ const DxfEditor = () => {
                 />
               </Tooltip>
             </div>
+            <div className="text-xs text-gray-500 mt-1 p-2 bg-gray-100 rounded">
+              {toolMode === "select" &&
+                "🖱️ Click shape to select, drag points to move"}
+              {toolMode === "select-point" &&
+                "🎯 Click point to select/deselect for precision editing"}
+              {toolMode === "add-point" &&
+                "➕ Click on line segment to add new point"}
+              {toolMode === "delete-point" && "🗑️ Click point to delete"}
+            </div>
           </Space>
         </Card>
 
-        {/* Precision Movement Controls */}
-        {selectedPoint && (
+        {/* Precision Movement Controls - Only show when point is selected */}
+        {selectedPoint && toolMode === "select-point" && (
           <Card
             title="🎯 Precision Movement"
             size="small"
             className="shadow-md border-2 border-purple-400"
           >
-            <Space direction="vertical" className="w-full" size="small">
+            <Space orientation="vertical" className="w-full" size="small">
               <Alert
-                message={`Point (${Math.round(
+                title={`Point ${selectedPoint.pointIndex + 1} of ${
+                  shapes[selectedPoint.shapeIndex]?.points.length
+                }`}
+                description={`Position: (${Math.round(
                   shapes[selectedPoint.shapeIndex]?.points[
                     selectedPoint.pointIndex
                   ][0]
@@ -724,7 +522,6 @@ const DxfEditor = () => {
                   max={12}
                   step={0.1}
                   style={{ width: "100%" }}
-                  addonAfter="inches"
                 />
               </div>
 
@@ -797,38 +594,45 @@ const DxfEditor = () => {
                   block
                   size="small"
                 >
-                  Down 
+                  Down
                 </Button>
                 <div></div>
+              </div>
+
+              <Divider style={{ margin: "8px 0" }} />
+
+              <div className="grid grid-cols-2 gap-2">
+                <Button
+                  onClick={() => setSelectedPoint(null)}
+                  block
+                  size="small"
+                >
+                  Deselect Point
+                </Button>
+                <Button
+                  danger
+                  icon={<DeleteOutlined />}
+                  onClick={() => {
+                    deletePoint(
+                      selectedPoint.shapeIndex,
+                      selectedPoint.pointIndex
+                    );
+                    setSelectedPoint(null);
+                  }}
+                  block
+                  size="small"
+                >
+                  Delete Point
+                </Button>
               </div>
             </Space>
           </Card>
         )}
 
         {/* Shape Properties */}
-        <Card title="🎨 Shape Properties" size="small" className="shadow-md">
-          {selectedShape ? (
+        {selectedShape && (
+          <Card title="🎨 Shape Properties" size="small" className="shadow-md">
             <div className="space-y-3">
-              <Alert
-                message={
-                  shapes.find((s) => s.id === selectedShape)?.name || "Shape"
-                }
-                type="info"
-                showIcon
-              />
-
-              <div>
-                <label className="block text-sm font-medium mb-2">Color</label>
-                <ColorPicker
-                  value={
-                    shapes.find((s) => s.id === selectedShape)?.color || color
-                  }
-                  onChange={(_, hex) => changeShapeColor(selectedShape, hex)}
-                  showText
-                  style={{ width: "100%" }}
-                />
-              </div>
-
               <div>
                 <label className="block text-sm font-medium mb-2">
                   Line Width:{" "}
@@ -914,19 +718,12 @@ const DxfEditor = () => {
                 </Button>
               </div>
             </div>
-          ) : (
-            <Alert
-              message="No shape selected"
-              description="Click on a shape to edit"
-              type="info"
-              showIcon
-            />
-          )}
-        </Card>
+          </Card>
+        )}
 
         {/* Settings */}
         <Card title="⚙️ Settings" size="small" className="shadow-md">
-          <Space direction="vertical" className="w-full" size="small">
+          <Space orientation="vertical" className="w-full" size="small">
             <div>
               <label className="block text-sm font-medium mb-2">
                 Grid Size: {gridSize}"
@@ -938,7 +735,6 @@ const DxfEditor = () => {
                 max={12}
                 step={0.1}
                 style={{ width: "100%" }}
-                addonAfter="inches"
               />
               <div className="mt-2 flex gap-1 flex-wrap">
                 <Button size="small" onClick={() => setGridSize(0.25)}>
@@ -979,75 +775,17 @@ const DxfEditor = () => {
       <div className="flex-1" ref={containerRef}>
         <Card className="shadow-lg">
           {/* Toolbar */}
-          <div className="flex flex-wrap items-center justify-between mb-4 gap-3 p-3 bg-gradient-to-r from-blue-50 to-purple-50 rounded-lg">
-            <div className="flex items-center gap-2 flex-wrap">
-              <Tooltip title="Undo (Ctrl+Z)">
-                <Button
-                  icon={<UndoOutlined />}
-                  onClick={handleUndo}
-                  disabled={historyIndex <= 0}
-                  size="large"
-                />
-              </Tooltip>
-              <Tooltip title="Redo (Ctrl+Y)">
-                <Button
-                  icon={<RedoOutlined />}
-                  onClick={handleRedo}
-                  disabled={historyIndex >= history.length - 1}
-                  size="large"
-                />
-              </Tooltip>
-
-              <Divider type="vertical" />
-
-              <Tooltip title="Zoom In">
-                <Button
-                  icon={<ZoomInOutlined />}
-                  onClick={() => setScale(Math.min(3, scale * 1.2))}
-                  size="large"
-                />
-              </Tooltip>
-              <Tooltip title="Zoom Out">
-                <Button
-                  icon={<ZoomOutOutlined />}
-                  onClick={() => setScale(Math.max(0.1, scale / 1.2))}
-                  size="large"
-                />
-              </Tooltip>
-              <Button
-                onClick={() => setScale(1)}
-                size="large"
-                disabled={scale === 1}
-              >
-                Reset Zoom
-              </Button>
-              <span className="text-sm font-medium px-2 py-1 bg-white rounded">
-                {Math.round(scale * 100)}%
-              </span>
-
-              <Divider type="vertical" />
-
-              <span className="text-sm font-medium px-3 py-1 bg-blue-100 rounded">
-                {shapes.filter((s) => s.visible).length} / {shapes.length}{" "}
-                shapes
-              </span>
-            </div>
-
-            <div className="flex items-center gap-4">
-              <Statistic
-                title="Total Area"
-                value={totalArea.toFixed(2)}
-                suffix="sq ft"
-                valueStyle={{ fontSize: "16px", color: "#1890ff" }}
-              />
-              <Statistic
-                title="Perimeter"
-                value={totalPerimeter.toFixed(2)}
-                suffix="ft"
-                valueStyle={{ fontSize: "16px", color: "#52c41a" }}
-              />
-            </div>
-          </div>
+          <MainToolbar
+            setShapes={setShapes}
+            setHistoryIndex={setHistoryIndex}
+            historyIndex={historyIndex}
+            history={history}
+            scale={scale}
+            setScale={setScale}
+            shapes={shapes}
+            totalArea={totalArea}
+            totalPerimeter={totalPerimeter}
+          />
 
           {/* Canvas */}
           <div
@@ -1101,6 +839,9 @@ const DxfEditor = () => {
                               selectedPoint?.shapeIndex === shapeIndex &&
                               selectedPoint?.pointIndex === pointIndex;
 
+                            // Determine if point should be draggable (only in select mode)
+                            const isDraggable = toolMode === "select";
+
                             return (
                               <Circle
                                 key={`${shape.id}-point-${pointIndex}`}
@@ -1112,20 +853,34 @@ const DxfEditor = () => {
                                 fill={isPointSelected ? "#f5222d" : "#722ed1"}
                                 stroke="#ffffff"
                                 strokeWidth={2 / scale}
-                                draggable
+                                draggable={isDraggable}
                                 onDragMove={(e) => {
-                                  handlePointDrag(
-                                    shapeIndex,
-                                    pointIndex,
-                                    e.target.position()
-                                  );
+                                  if (isDraggable) {
+                                    handlePointDrag(
+                                      shapeIndex,
+                                      pointIndex,
+                                      e.target.position()
+                                    );
+                                  }
                                 }}
-                                onDragEnd={handlePointDragEnd}
+                                onDragEnd={() => {
+                                  if (isDraggable) {
+                                    handlePointDragEnd();
+                                  }
+                                }}
                                 onMouseEnter={(e) => {
                                   const container = e.target
                                     .getStage()
                                     .container();
-                                  container.style.cursor = "move";
+                                  if (toolMode === "delete-point") {
+                                    container.style.cursor = "not-allowed";
+                                  } else if (toolMode === "select-point") {
+                                    container.style.cursor = "pointer";
+                                  } else if (toolMode === "select") {
+                                    container.style.cursor = "move";
+                                  } else {
+                                    container.style.cursor = "default";
+                                  }
                                 }}
                                 onMouseLeave={(e) => {
                                   const container = e.target
@@ -1133,17 +888,9 @@ const DxfEditor = () => {
                                     .container();
                                   container.style.cursor = "default";
                                 }}
-                                onClick={(e) => {
-                                  e.cancelBubble = true;
-                                  if (toolMode === "delete-point") {
-                                    deletePoint(shapeIndex, pointIndex);
-                                  } else {
-                                    setSelectedPoint({
-                                      shapeIndex,
-                                      pointIndex,
-                                    });
-                                  }
-                                }}
+                                onClick={(e) =>
+                                  handlePointClick(e, shapeIndex, pointIndex)
+                                }
                               />
                             );
                           })}
@@ -1226,7 +973,7 @@ const DxfEditor = () => {
                                 key={`measure-${idx}`}
                                 x={midX}
                                 y={midY - 15 / scale}
-                                text={`${(distance / 12).toFixed(1)}ft`}
+                                text={`${((distance * 0.5) / 12).toFixed(1)}ft`}
                                 fontSize={12 / scale}
                                 fill="#000"
                                 fontStyle="bold"
@@ -1266,52 +1013,16 @@ const DxfEditor = () => {
           </div>
 
           {/* Status Bar */}
-          <div className="mt-3 flex justify-between items-center text-sm bg-gray-50 p-3 rounded">
-            <div className="font-medium">
-              {selectedPoint ? (
-                <span className="text-red-600">
-                  📍 Point Selected: (
-                  {Math.round(
-                    shapes[selectedPoint.shapeIndex]?.points[
-                      selectedPoint.pointIndex
-                    ][0]
-                  )}
-                  ,
-                  {Math.round(
-                    shapes[selectedPoint.shapeIndex]?.points[
-                      selectedPoint.pointIndex
-                    ][1]
-                  )}
-                  ) - Use arrow buttons to move
-                </span>
-              ) : selectedShape ? (
-                <span className="text-blue-600">
-                  ✓ Selected: {shapes.find((s) => s.id === selectedShape)?.name}
-                </span>
-              ) : (
-                <span className="text-gray-500">
-                  ℹ️ Mode:{" "}
-                  {toolMode === "select"
-                    ? "Select & Move"
-                    : toolMode === "add-point"
-                    ? "Add Point"
-                    : "Delete Point"}
-                </span>
-              )}
-            </div>
-            <div className="flex gap-4 text-gray-600">
-              <span>
-                📏 Grid: {gridSize}" | Move: {moveIncrement}"
-              </span>
-              <span>
-                📊 Total Points:{" "}
-                {shapes.reduce((sum, shape) => sum + shape.points.length, 0)}
-              </span>
-              <span>
-                📜 History: {historyIndex + 1} / {history.length}
-              </span>
-            </div>
-          </div>
+          <StatusBar
+            shapes={shapes}
+            selectedShape={selectedShape}
+            selectedPoint={selectedPoint}
+            toolMode={toolMode}
+            gridSize={gridSize}
+            moveIncrement={moveIncrement}
+            history={history}
+            historyIndex={historyIndex}
+          />
         </Card>
       </div>
     </div>
