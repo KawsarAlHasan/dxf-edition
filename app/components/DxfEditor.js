@@ -1,14 +1,12 @@
 "use client";
 import { useState, useRef, useEffect } from "react";
-import { Stage, Layer, Line, Circle, Text, Group } from "react-konva";
+import { Stage, Layer, Line, Circle, Text, Group, Arc } from "react-konva";
 import {
   Button,
-  Slider,
   Card,
   Divider,
   Space,
   Tooltip,
-  Switch,
   Alert,
   InputNumber,
 } from "antd";
@@ -16,22 +14,20 @@ import {
   PlusOutlined,
   DragOutlined,
   DeleteOutlined,
-  CopyOutlined,
-  EyeOutlined,
-  EyeInvisibleOutlined,
-  LockOutlined,
-  UnlockOutlined,
   ArrowUpOutlined,
   ArrowDownOutlined,
   ArrowLeftOutlined,
   ArrowRightOutlined,
   AimOutlined,
+  RadiusSettingOutlined,
 } from "@ant-design/icons";
 import { produce } from "immer";
 import FileOperations from "./FileOperations";
 import { showToast } from "nextjs-toast-notify";
 import StatusBar from "./StatusBar";
 import MainToolbar from "./MainToolbar";
+import Settings from "./Settings";
+import ShapeProperties from "./ShapeProperties";
 
 const DxfEditor = () => {
   // State Management
@@ -51,6 +47,13 @@ const DxfEditor = () => {
   const [toolMode, setToolMode] = useState("select");
   const [gridSize, setGridSize] = useState(0.5);
   const [moveIncrement, setMoveIncrement] = useState(0.5);
+
+  // Round by Drag State
+  const [roundByDragActive, setRoundByDragActive] = useState(false);
+  const [roundingPoints, setRoundingPoints] = useState([]); // [{shapeIndex, pointIndex}, ...]
+  const [isDraggingMidpoint, setIsDraggingMidpoint] = useState(false);
+  const [dragOffset, setDragOffset] = useState(0); // Distance dragged from midpoint
+  const [previewArc, setPreviewArc] = useState(null); // Preview arc while dragging
 
   // Refs
   const stageRef = useRef();
@@ -96,12 +99,39 @@ const DxfEditor = () => {
     return () => window.removeEventListener("resize", updateSize);
   }, []);
 
-  // Clear selected point when tool mode changes (except select-point)
+  // Clear selected point when tool mode changes (except select-point and round-by-drag)
   useEffect(() => {
-    if (toolMode !== "select-point") {
+    if (toolMode !== "select-point" && toolMode !== "round-by-drag") {
       setSelectedPoint(null);
     }
+    // Reset rounding state when switching away from round-by-drag
+    if (toolMode !== "round-by-drag") {
+      setRoundByDragActive(false);
+      setRoundingPoints([]);
+      setIsDraggingMidpoint(false);
+      setDragOffset(0);
+      setPreviewArc(null);
+    }
   }, [toolMode]);
+
+  // Toggle Round by Drag mode
+  const toggleRoundByDrag = () => {
+    if (roundByDragActive) {
+      // Deactivate
+      setRoundByDragActive(false);
+      setRoundingPoints([]);
+      setIsDraggingMidpoint(false);
+      setDragOffset(0);
+      setPreviewArc(null);
+      setToolMode("select");
+    } else {
+      // Activate
+      setRoundByDragActive(true);
+      setToolMode("round-by-drag");
+      setRoundingPoints([]);
+      setSelectedPoint(null);
+    }
+  };
 
   // Update History
   const updateHistory = (newShapes) => {
@@ -118,25 +148,7 @@ const DxfEditor = () => {
     calculateMeasurements(newShapes);
     setSelectedShape(null);
     setSelectedPoint(null);
-  };
-
-  // Scale/Resize Shape
-  const handleScale = (shapeId, scaleFactor) => {
-    const updatedShapes = shapes.map((shape) => {
-      if (shape.id === shapeId) {
-        const center = getShapeCenter(shape.points);
-        return {
-          ...shape,
-          points: shape.points.map((pt) => [
-            center.x + (pt[0] - center.x) * scaleFactor,
-            center.y + (pt[1] - center.y) * scaleFactor,
-          ]),
-        };
-      }
-      return shape;
-    });
-    updateShapes(updatedShapes);
-    showToast.success(`Shape scaled by ${scaleFactor}x`, { duration: 2000 });
+    setRoundingPoints([]);
   };
 
   // Drag Points with custom grid snap
@@ -296,64 +308,6 @@ const DxfEditor = () => {
     };
   };
 
-  // Delete Selected Shape
-  const deleteSelectedShape = () => {
-    if (selectedShape) {
-      const updatedShapes = shapes.filter(
-        (shape) => shape.id !== selectedShape
-      );
-      updateShapes(updatedShapes);
-      setSelectedShape(null);
-      setSelectedPoint(null);
-      showToast.success("Shape deleted", { duration: 2000 });
-    } else {
-      showToast.warning("Please select a shape first", { duration: 2000 });
-    }
-  };
-
-  // Duplicate Shape
-  const duplicateShape = () => {
-    if (selectedShape) {
-      const original = shapes.find((s) => s.id === selectedShape);
-      if (original) {
-        const duplicated = {
-          ...original,
-          id: `${original.id}-copy-${Date.now()}`,
-          points: original.points.map((pt) => [pt[0] + 50, pt[1] + 50]),
-          name: `${original.name} (Copy)`,
-        };
-        const updatedShapes = [...shapes, duplicated];
-        updateShapes(updatedShapes);
-        setSelectedShape(duplicated.id);
-        showToast.success("Shape duplicated", { duration: 2000 });
-      }
-    } else {
-      showToast.warning("Please select a shape first", { duration: 2000 });
-    }
-  };
-
-  // Toggle Shape Visibility
-  const toggleShapeVisibility = (shapeId) => {
-    const updatedShapes = shapes.map((shape) =>
-      shape.id === shapeId ? { ...shape, visible: !shape.visible } : shape
-    );
-    updateShapes(updatedShapes);
-  };
-
-  // Toggle Shape Lock
-  const toggleShapeLock = (shapeId) => {
-    const updatedShapes = shapes.map((shape) =>
-      shape.id === shapeId ? { ...shape, locked: !shape.locked } : shape
-    );
-    updateShapes(updatedShapes);
-    showToast.success(
-      shapes.find((s) => s.id === shapeId)?.locked
-        ? "Shape unlocked"
-        : "Shape locked",
-      { duration: 2000 }
-    );
-  };
-
   // Grid Generator with custom grid size
   const renderGrid = () => {
     const gridSizePixels = gridSize * 12;
@@ -406,11 +360,390 @@ const DxfEditor = () => {
     };
   };
 
+  // ============== ROUND BY DRAG FUNCTIONS ==============
+
+  // Get midpoint between two points
+  const getMidpoint = (p1, p2) => {
+    return {
+      x: (p1[0] + p2[0]) / 2,
+      y: (p1[1] + p2[1]) / 2,
+    };
+  };
+
+  // Get distance between two points
+  const getDistance = (p1, p2) => {
+    const dx = p2[0] - p1[0];
+    const dy = p2[1] - p1[1];
+    return Math.sqrt(dx * dx + dy * dy);
+  };
+
+  // Get perpendicular direction (normalized)
+  const getPerpendicularDirection = (p1, p2) => {
+    const dx = p2[0] - p1[0];
+    const dy = p2[1] - p1[1];
+    const length = Math.sqrt(dx * dx + dy * dy);
+    // Perpendicular vector (rotated 90 degrees)
+    return {
+      x: -dy / length,
+      y: dx / length,
+    };
+  };
+
+  // Calculate arc points for preview and final shape
+  const calculateArcPoints = (p1, p2, dragDistance, numSegments = 20) => {
+    if (Math.abs(dragDistance) < 1) {
+      return [p1, p2]; // No arc, just straight line
+    }
+
+    const midpoint = getMidpoint(p1, p2);
+    const d = getDistance(p1, p2);
+    const h = Math.abs(dragDistance);
+
+    // Limit h to prevent invalid calculations
+    const maxH = d / 2 - 1;
+    const clampedH = Math.min(h, maxH);
+
+    if (clampedH < 1) {
+      return [p1, p2];
+    }
+
+    // Calculate radius using the sagitta formula
+    // r = (h/2) + (d²)/(8h)
+    const radius = clampedH / 2 + (d * d) / (8 * clampedH);
+
+    // Get perpendicular direction
+    const perp = getPerpendicularDirection(p1, p2);
+
+    // Determine arc direction based on drag direction
+    const direction = dragDistance > 0 ? 1 : -1;
+
+    // Center of the arc
+    const centerX = midpoint.x + perp.x * (radius - clampedH) * direction;
+    const centerY = midpoint.y + perp.y * (radius - clampedH) * direction;
+
+    // Calculate start and end angles
+    const startAngle = Math.atan2(p1[1] - centerY, p1[0] - centerX);
+    const endAngle = Math.atan2(p2[1] - centerY, p2[0] - centerX);
+
+    // Generate arc points
+    const arcPoints = [];
+
+    // Determine the correct sweep direction
+    let angleDiff = endAngle - startAngle;
+
+    // Normalize angle difference
+    if (direction > 0) {
+      // Outward arc - use shorter path
+      if (angleDiff > Math.PI) angleDiff -= 2 * Math.PI;
+      if (angleDiff < -Math.PI) angleDiff += 2 * Math.PI;
+    } else {
+      // Inward arc - use shorter path
+      if (angleDiff > Math.PI) angleDiff -= 2 * Math.PI;
+      if (angleDiff < -Math.PI) angleDiff += 2 * Math.PI;
+    }
+
+    for (let i = 0; i <= numSegments; i++) {
+      const t = i / numSegments;
+      const angle = startAngle + angleDiff * t;
+      const x = centerX + radius * Math.cos(angle);
+      const y = centerY + radius * Math.sin(angle);
+      arcPoints.push([x, y]);
+    }
+
+    return arcPoints;
+  };
+
+  // Handle point click in round-by-drag mode
+  const handleRoundingPointClick = (e, shapeIndex, pointIndex) => {
+    e.cancelBubble = true;
+
+    if (!roundByDragActive) return;
+
+    const shape = shapes[shapeIndex];
+    if (!shape) return;
+
+    // Check if this point is already selected
+    const existingIndex = roundingPoints.findIndex(
+      (rp) => rp.shapeIndex === shapeIndex && rp.pointIndex === pointIndex
+    );
+
+    if (existingIndex !== -1) {
+      // Deselect this point
+      const newPoints = [...roundingPoints];
+      newPoints.splice(existingIndex, 1);
+      setRoundingPoints(newPoints);
+      return;
+    }
+
+    // Check if we're selecting from the same shape
+    if (
+      roundingPoints.length > 0 &&
+      roundingPoints[0].shapeIndex !== shapeIndex
+    ) {
+      showToast.warning("Please select points from the same shape", {
+        duration: 2000,
+      });
+      return;
+    }
+
+    // Add this point
+    if (roundingPoints.length < 2) {
+      const newPoints = [...roundingPoints, { shapeIndex, pointIndex }];
+      setRoundingPoints(newPoints);
+
+      if (newPoints.length === 2) {
+        // Check if points are adjacent
+        const idx1 = newPoints[0].pointIndex;
+        const idx2 = newPoints[1].pointIndex;
+        const numPoints = shape.points.length;
+
+        const isAdjacent =
+          Math.abs(idx1 - idx2) === 1 ||
+          (shape.closed &&
+            ((idx1 === 0 && idx2 === numPoints - 1) ||
+              (idx2 === 0 && idx1 === numPoints - 1)));
+
+        if (!isAdjacent) {
+          showToast.warning("Please select two adjacent points", {
+            duration: 2000,
+          });
+          setRoundingPoints([]);
+          return;
+        }
+
+        showToast.info("Drag the midpoint to create a round", {
+          duration: 3000,
+        });
+      }
+    }
+  };
+
+  // Handle midpoint drag start
+  const handleMidpointDragStart = (e) => {
+    e.cancelBubble = true;
+    setIsDraggingMidpoint(true);
+    setDragOffset(0);
+  };
+
+  // Handle midpoint drag
+  const handleMidpointDrag = (e) => {
+    if (!isDraggingMidpoint || roundingPoints.length !== 2) return;
+
+    const shape = shapes[roundingPoints[0].shapeIndex];
+    const p1 = shape.points[roundingPoints[0].pointIndex];
+    const p2 = shape.points[roundingPoints[1].pointIndex];
+    const midpoint = getMidpoint(p1, p2);
+    const perp = getPerpendicularDirection(p1, p2);
+
+    const pos = e.target.position();
+
+    // Calculate drag distance along perpendicular
+    const dx = pos.x - midpoint.x;
+    const dy = pos.y - midpoint.y;
+    const projectedDistance = dx * perp.x + dy * perp.y;
+
+    setDragOffset(projectedDistance);
+
+    // Calculate preview arc
+    const arcPoints = calculateArcPoints(p1, p2, projectedDistance);
+    setPreviewArc({
+      points: arcPoints,
+      shapeIndex: roundingPoints[0].shapeIndex,
+    });
+  };
+
+  // Handle midpoint drag end - apply the rounding
+  const handleMidpointDragEnd = () => {
+    if (
+      !isDraggingMidpoint ||
+      roundingPoints.length !== 2 ||
+      Math.abs(dragOffset) < 5
+    ) {
+      setIsDraggingMidpoint(false);
+      setDragOffset(0);
+      setPreviewArc(null);
+      return;
+    }
+
+    const shape = shapes[roundingPoints[0].shapeIndex];
+    const p1 = shape.points[roundingPoints[0].pointIndex];
+    const p2 = shape.points[roundingPoints[1].pointIndex];
+
+    // Generate arc points
+    const arcPoints = calculateArcPoints(p1, p2, dragOffset, 16);
+
+    // Update the shape by replacing the segment with arc points
+    const updatedShapes = produce(shapes, (draft) => {
+      const shapeToUpdate = draft[roundingPoints[0].shapeIndex];
+      const idx1 = roundingPoints[0].pointIndex;
+      const idx2 = roundingPoints[1].pointIndex;
+
+      // Determine which index comes first
+      const minIdx = Math.min(idx1, idx2);
+      const maxIdx = Math.max(idx1, idx2);
+
+      // Handle edge case for closed shapes where first and last points are selected
+      if (
+        shape.closed &&
+        minIdx === 0 &&
+        maxIdx === shapeToUpdate.points.length - 1
+      ) {
+        // Arc between last and first point
+        const newPoints = [
+          ...arcPoints.slice(1, -1), // Arc points (excluding endpoints)
+          ...shapeToUpdate.points.slice(1, -1), // Middle points
+        ];
+        shapeToUpdate.points =
+          newPoints.length >= 3 ? newPoints : shapeToUpdate.points;
+      } else {
+        // Normal case - insert arc points between the two selected points
+        const newPoints = [
+          ...shapeToUpdate.points.slice(0, minIdx + 1),
+          ...arcPoints.slice(1, -1), // Arc points (excluding endpoints that match existing points)
+          ...shapeToUpdate.points.slice(maxIdx),
+        ];
+        shapeToUpdate.points = newPoints;
+      }
+    });
+
+    updateShapes(updatedShapes);
+    showToast.success("Round applied successfully!", { duration: 2000 });
+
+    // Reset state
+    setIsDraggingMidpoint(false);
+    setDragOffset(0);
+    setPreviewArc(null);
+    setRoundingPoints([]);
+  };
+
+  // Render midpoint for rounding
+  const renderRoundingMidpoint = () => {
+    if (!roundByDragActive || roundingPoints.length !== 2) return null;
+
+    const shape = shapes[roundingPoints[0].shapeIndex];
+    if (!shape) return null;
+
+    const p1 = shape.points[roundingPoints[0].pointIndex];
+    const p2 = shape.points[roundingPoints[1].pointIndex];
+    const midpoint = getMidpoint(p1, p2);
+
+    return (
+      <Group>
+        {/* Connection line between selected points */}
+        <Line
+          points={[p1[0], p1[1], p2[0], p2[1]]}
+          stroke="#ff4d4f"
+          strokeWidth={2 / scale}
+          dash={[5 / scale, 5 / scale]}
+          listening={false}
+        />
+
+        {/* Guide line showing drag direction */}
+        {isDraggingMidpoint && (
+          <Line
+            points={[
+              midpoint.x,
+              midpoint.y,
+              midpoint.x + getPerpendicularDirection(p1, p2).x * dragOffset,
+              midpoint.y + getPerpendicularDirection(p1, p2).y * dragOffset,
+            ]}
+            stroke="#52c41a"
+            strokeWidth={2 / scale}
+            listening={false}
+          />
+        )}
+
+        {/* Midpoint handle */}
+        <Circle
+          x={
+            isDraggingMidpoint
+              ? midpoint.x + getPerpendicularDirection(p1, p2).x * dragOffset
+              : midpoint.x
+          }
+          y={
+            isDraggingMidpoint
+              ? midpoint.y + getPerpendicularDirection(p1, p2).y * dragOffset
+              : midpoint.y
+          }
+          radius={12 / scale}
+          fill="#52c41a"
+          stroke="#ffffff"
+          strokeWidth={3 / scale}
+          draggable={true}
+          onDragStart={handleMidpointDragStart}
+          onDragMove={handleMidpointDrag}
+          onDragEnd={handleMidpointDragEnd}
+          onMouseEnter={(e) => {
+            const container = e.target.getStage().container();
+            container.style.cursor = "ns-resize";
+          }}
+          onMouseLeave={(e) => {
+            const container = e.target.getStage().container();
+            container.style.cursor = "default";
+          }}
+        />
+
+        {/* Midpoint label */}
+        <Text
+          x={midpoint.x + 15 / scale}
+          y={midpoint.y - 10 / scale}
+          text="MiddlePoint"
+          fontSize={12 / scale}
+          fill="#52c41a"
+          fontStyle="bold"
+          listening={false}
+        />
+
+        {/* Drag offset indicator */}
+        {isDraggingMidpoint && Math.abs(dragOffset) > 5 && (
+          <Text
+            x={
+              midpoint.x +
+              getPerpendicularDirection(p1, p2).x * dragOffset +
+              15 / scale
+            }
+            y={
+              midpoint.y +
+              getPerpendicularDirection(p1, p2).y * dragOffset -
+              10 / scale
+            }
+            text={`${dragOffset > 0 ? "+" : ""}${(dragOffset / 12).toFixed(
+              2
+            )}"`}
+            fontSize={11 / scale}
+            fill="#722ed1"
+            fontStyle="bold"
+            listening={false}
+          />
+        )}
+      </Group>
+    );
+  };
+
+  // Render preview arc
+  const renderPreviewArc = () => {
+    if (!previewArc || previewArc.points.length < 2) return null;
+    const flatPoints = previewArc.points.flat();
+    return (
+      <Line
+        points={flatPoints}
+        stroke="#52c41a"
+        strokeWidth={3 / scale}
+        lineCap="round"
+        lineJoin="round"
+        dash={[8 / scale, 4 / scale]}
+        listening={false}
+      />
+    );
+  };
+
   // Handle point click based on tool mode
   const handlePointClick = (e, shapeIndex, pointIndex) => {
     e.cancelBubble = true;
 
-    if (toolMode === "delete-point") {
+    if (toolMode === "round-by-drag") {
+      handleRoundingPointClick(e, shapeIndex, pointIndex);
+    } else if (toolMode === "delete-point") {
       deletePoint(shapeIndex, pointIndex);
     } else if (toolMode === "select-point") {
       // Toggle selection - if same point clicked, deselect it
@@ -424,6 +757,13 @@ const DxfEditor = () => {
       }
     }
     // For other modes (select, add-point), do nothing on point click
+  };
+
+  // Check if a point is selected for rounding
+  const isPointSelectedForRounding = (shapeIndex, pointIndex) => {
+    return roundingPoints.some(
+      (rp) => rp.shapeIndex === shapeIndex && rp.pointIndex === pointIndex
+    );
   };
 
   return (
@@ -474,6 +814,25 @@ const DxfEditor = () => {
                 />
               </Tooltip>
             </div>
+
+            {/* Round by Drag Button */}
+            <Divider style={{ margin: "8px 0" }}>Rounding</Divider>
+            <Tooltip title="Round by Drag - Select 2 adjacent points then drag midpoint">
+              <Button
+                type={roundByDragActive ? "primary" : "default"}
+                icon={<RadiusSettingOutlined />}
+                onClick={toggleRoundByDrag}
+                block
+                style={{
+                  height: 40,
+                  backgroundColor: roundByDragActive ? "#1890ff" : undefined,
+                  borderColor: roundByDragActive ? "#1890ff" : undefined,
+                }}
+              >
+                🔵 Round by Drag
+              </Button>
+            </Tooltip>
+
             <div className="text-xs text-gray-500 mt-1 p-2 bg-gray-100 rounded">
               {toolMode === "select" &&
                 "🖱️ Click shape to select, drag points to move"}
@@ -482,7 +841,35 @@ const DxfEditor = () => {
               {toolMode === "add-point" &&
                 "➕ Click on line segment to add new point"}
               {toolMode === "delete-point" && "🗑️ Click point to delete"}
+              {toolMode === "round-by-drag" && (
+                <span className="text-blue-600 font-medium">
+                  🔵 Select 2 adjacent points, then drag the midpoint up/down to
+                  round
+                </span>
+              )}
             </div>
+
+            {/* Rounding Status */}
+            {roundByDragActive && (
+              <Alert
+                type={roundingPoints.length === 2 ? "success" : "info"}
+                title={
+                  roundingPoints.length === 0
+                    ? "Step 1: Click first point"
+                    : roundingPoints.length === 1
+                    ? "Step 2: Click second adjacent point"
+                    : "Step 3: Drag the green midpoint up/down"
+                }
+                showIcon
+                style={{ marginTop: 8 }}
+              />
+            )}
+
+            {roundByDragActive && roundingPoints.length > 0 && (
+              <Button size="small" onClick={() => setRoundingPoints([])} block>
+                Clear Selection
+              </Button>
+            )}
           </Space>
         </Card>
 
@@ -601,17 +988,17 @@ const DxfEditor = () => {
 
               <Divider style={{ margin: "8px 0" }} />
 
-              <div className="grid grid-cols-2 gap-2">
+              <div className="grid grid-cols-2 gap-1 mx-[-5px]">
                 <Button
                   onClick={() => setSelectedPoint(null)}
                   block
                   size="small"
+                  className="!p-3"
                 >
                   Deselect Point
                 </Button>
                 <Button
                   danger
-                  icon={<DeleteOutlined />}
                   onClick={() => {
                     deletePoint(
                       selectedPoint.shapeIndex,
@@ -621,6 +1008,7 @@ const DxfEditor = () => {
                   }}
                   block
                   size="small"
+                  className="!p-3"
                 >
                   Delete Point
                 </Button>
@@ -631,144 +1019,26 @@ const DxfEditor = () => {
 
         {/* Shape Properties */}
         {selectedShape && (
-          <Card title="🎨 Shape Properties" size="small" className="shadow-md">
-            <div className="space-y-3">
-              <div>
-                <label className="block text-sm font-medium mb-2">
-                  Line Width:{" "}
-                  {shapes.find((s) => s.id === selectedShape)?.strokeWidth ||
-                    lineWidth}
-                </label>
-                <Slider
-                  min={1}
-                  max={10}
-                  value={
-                    shapes.find((s) => s.id === selectedShape)?.strokeWidth ||
-                    lineWidth
-                  }
-                  onChange={(value) => {
-                    const updatedShapes = shapes.map((shape) =>
-                      shape.id === selectedShape
-                        ? { ...shape, strokeWidth: value }
-                        : shape
-                    );
-                    updateShapes(updatedShapes);
-                  }}
-                />
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium mb-2">Scale</label>
-                <div className="flex gap-2">
-                  <Button onClick={() => handleScale(selectedShape, 0.8)} block>
-                    80%
-                  </Button>
-                  <Button onClick={() => handleScale(selectedShape, 1.2)} block>
-                    120%
-                  </Button>
-                  <Button onClick={() => handleScale(selectedShape, 1.5)} block>
-                    150%
-                  </Button>
-                </div>
-              </div>
-
-              <Divider style={{ margin: "8px 0" }} />
-
-              <div className="grid grid-cols-2 gap-2">
-                <Button
-                  icon={
-                    shapes.find((s) => s.id === selectedShape)?.visible ? (
-                      <EyeOutlined />
-                    ) : (
-                      <EyeInvisibleOutlined />
-                    )
-                  }
-                  onClick={() => toggleShapeVisibility(selectedShape)}
-                  block
-                >
-                  {shapes.find((s) => s.id === selectedShape)?.visible
-                    ? "Hide"
-                    : "Show"}
-                </Button>
-                <Button
-                  icon={
-                    shapes.find((s) => s.id === selectedShape)?.locked ? (
-                      <LockOutlined />
-                    ) : (
-                      <UnlockOutlined />
-                    )
-                  }
-                  onClick={() => toggleShapeLock(selectedShape)}
-                  block
-                >
-                  {shapes.find((s) => s.id === selectedShape)?.locked
-                    ? "Unlock"
-                    : "Lock"}
-                </Button>
-                <Button icon={<CopyOutlined />} onClick={duplicateShape} block>
-                  Duplicate
-                </Button>
-                <Button
-                  danger
-                  icon={<DeleteOutlined />}
-                  onClick={deleteSelectedShape}
-                  block
-                >
-                  Delete
-                </Button>
-              </div>
-            </div>
-          </Card>
+          <ShapeProperties
+            shapes={shapes}
+            selectedShape={selectedShape}
+            updateShapes={updateShapes}
+            setSelectedShape={setSelectedShape}
+            setSelectedPoint={setSelectedPoint}
+          />
         )}
 
         {/* Settings */}
-        <Card title="⚙️ Settings" size="small" className="shadow-md">
-          <Space orientation="vertical" className="w-full" size="small">
-            <div>
-              <label className="block text-sm font-medium mb-2">
-                Grid Size: {gridSize}"
-              </label>
-              <InputNumber
-                value={gridSize}
-                onChange={(value) => setGridSize(value || 0.5)}
-                min={0.1}
-                max={12}
-                step={0.1}
-                style={{ width: "100%" }}
-              />
-              <div className="mt-2 flex gap-1 flex-wrap">
-                <Button size="small" onClick={() => setGridSize(0.25)}>
-                  1/4"
-                </Button>
-                <Button size="small" onClick={() => setGridSize(0.5)}>
-                  1/2"
-                </Button>
-                <Button size="small" onClick={() => setGridSize(1)}>
-                  1"
-                </Button>
-                <Button size="small" onClick={() => setGridSize(2)}>
-                  2"
-                </Button>
-              </div>
-            </div>
-
-            <div className="flex justify-between items-center">
-              <span>Show Grid</span>
-              <Switch checked={gridVisible} onChange={setGridVisible} />
-            </div>
-            <div className="flex justify-between items-center">
-              <span>Snap to Grid</span>
-              <Switch checked={snapToGrid} onChange={setSnapToGrid} />
-            </div>
-            <div className="flex justify-between items-center">
-              <span>Show Measurements</span>
-              <Switch
-                checked={showMeasurements}
-                onChange={setShowMeasurements}
-              />
-            </div>
-          </Space>
-        </Card>
+        <Settings
+          gridSize={gridSize}
+          setGridSize={setGridSize}
+          gridVisible={gridVisible}
+          setGridVisible={setGridVisible}
+          snapToGrid={snapToGrid}
+          setSnapToGrid={setSnapToGrid}
+          showMeasurements={showMeasurements}
+          setShowMeasurements={setShowMeasurements}
+        />
       </div>
 
       {/* Main Canvas Area */}
@@ -832,15 +1102,29 @@ const DxfEditor = () => {
                         />
 
                         {/* Control Points */}
-                        {isSelected &&
+                        {(isSelected || roundByDragActive) &&
                           !isLocked &&
                           shape.points.map((point, pointIndex) => {
                             const isPointSelected =
                               selectedPoint?.shapeIndex === shapeIndex &&
                               selectedPoint?.pointIndex === pointIndex;
 
+                            const isSelectedForRounding =
+                              isPointSelectedForRounding(
+                                shapeIndex,
+                                pointIndex
+                              );
+
                             // Determine if point should be draggable (only in select mode)
                             const isDraggable = toolMode === "select";
+
+                            // Determine point color
+                            let pointColor = "#722ed1"; // Default purple
+                            if (isSelectedForRounding) {
+                              pointColor = "#ff4d4f"; // Red for rounding selection
+                            } else if (isPointSelected) {
+                              pointColor = "#f5222d"; // Red for precision selection
+                            }
 
                             return (
                               <Circle
@@ -848,9 +1132,11 @@ const DxfEditor = () => {
                                 x={point[0]}
                                 y={point[1]}
                                 radius={
-                                  isPointSelected ? 10 / scale : 8 / scale
+                                  isPointSelected || isSelectedForRounding
+                                    ? 10 / scale
+                                    : 8 / scale
                                 }
-                                fill={isPointSelected ? "#f5222d" : "#722ed1"}
+                                fill={pointColor}
                                 stroke="#ffffff"
                                 strokeWidth={2 / scale}
                                 draggable={isDraggable}
@@ -874,7 +1160,10 @@ const DxfEditor = () => {
                                     .container();
                                   if (toolMode === "delete-point") {
                                     container.style.cursor = "not-allowed";
-                                  } else if (toolMode === "select-point") {
+                                  } else if (
+                                    toolMode === "select-point" ||
+                                    toolMode === "round-by-drag"
+                                  ) {
                                     container.style.cursor = "pointer";
                                   } else if (toolMode === "select") {
                                     container.style.cursor = "move";
@@ -986,6 +1275,12 @@ const DxfEditor = () => {
                       </Group>
                     );
                   })}
+
+                {/* Preview Arc for Rounding */}
+                {renderPreviewArc()}
+
+                {/* Rounding Midpoint */}
+                {renderRoundingMidpoint()}
 
                 {/* Selection Bounding Box */}
                 {selectedShape && getSelectedShapeBoundingBox() && (
