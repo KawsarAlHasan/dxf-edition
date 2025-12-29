@@ -1,7 +1,6 @@
 "use client";
 import { DownloadOutlined, UploadOutlined } from "@ant-design/icons";
-import { Button, Card, Divider, Space } from "antd";
-import { showToast } from "nextjs-toast-notify";
+import { Button, Card, Divider, Space, message } from "antd";
 import React, { useState } from "react";
 
 const initialShapes = [
@@ -13,7 +12,7 @@ const initialShapes = [
 function FileOperations({ stageRef, fileInputRef, onShapesLoaded }) {
   const [availableDxfFiles] = useState(initialShapes);
 
-  // COMPLETELY REWRITTEN DXF PARSER - WORKING VERSION
+  // DXF Parser
   const parseDxfContent = (content) => {
     const lines = content.split('\n').map(line => line.trim());
     const entities = [];
@@ -21,7 +20,6 @@ function FileOperations({ stageRef, fileInputRef, onShapesLoaded }) {
     let inEntitiesSection = false;
     let i = 0;
     
-    // Find ENTITIES section
     while (i < lines.length) {
       if (lines[i] === '0' && lines[i + 1] === 'SECTION') {
         if (lines[i + 2] === '2' && lines[i + 3] === 'ENTITIES') {
@@ -38,17 +36,14 @@ function FileOperations({ stageRef, fileInputRef, onShapesLoaded }) {
       return [];
     }
     
-    // Parse entities
     while (i < lines.length) {
       const code = lines[i];
       const value = lines[i + 1];
       
-      // Check for end of section
       if (code === '0' && value === 'ENDSEC') {
         break;
       }
       
-      // Found an entity
       if (code === '0') {
         if (value === 'LINE') {
           const lineEntity = parseLINE(lines, i);
@@ -77,13 +72,11 @@ function FileOperations({ stageRef, fileInputRef, onShapesLoaded }) {
       return [];
     }
     
-    // Transform to canvas coordinates
     return transformToCanvas(entities);
   };
   
-  // Parse LINE entity
   const parseLINE = (lines, startIndex) => {
-    let i = startIndex + 2; // Skip "0" and "LINE"
+    let i = startIndex + 2;
     const entity = { type: 'LINE', points: [] };
     let x1, y1, x2, y2;
     
@@ -108,7 +101,6 @@ function FileOperations({ stageRef, fileInputRef, onShapesLoaded }) {
     return null;
   };
   
-  // Parse LWPOLYLINE entity
   const parseLWPOLYLINE = (lines, startIndex) => {
     let i = startIndex + 2;
     const entity = { type: 'LWPOLYLINE', points: [], closed: false };
@@ -134,12 +126,10 @@ function FileOperations({ stageRef, fileInputRef, onShapesLoaded }) {
     return entity.points.length >= 2 ? entity : null;
   };
   
-  // Parse POLYLINE entity (with VERTEX)
   const parsePOLYLINE = (lines, startIndex) => {
     let i = startIndex + 2;
     const entity = { type: 'POLYLINE', points: [], closed: false };
     
-    // Read POLYLINE flags
     while (i < lines.length) {
       const code = lines[i];
       const value = lines[i + 1];
@@ -150,7 +140,6 @@ function FileOperations({ stageRef, fileInputRef, onShapesLoaded }) {
       
       if (code === '0') {
         if (value === 'VERTEX') {
-          // Parse VERTEX
           i += 2;
           let x, y;
           while (i < lines.length && lines[i] !== '0') {
@@ -179,9 +168,7 @@ function FileOperations({ stageRef, fileInputRef, onShapesLoaded }) {
     return entity.points.length >= 2 ? entity : null;
   };
   
-  // Transform entities to canvas coordinates
   const transformToCanvas = (entities) => {
-    // Calculate bounds
     let minX = Infinity, minY = Infinity;
     let maxX = -Infinity, maxY = -Infinity;
     
@@ -204,19 +191,16 @@ function FileOperations({ stageRef, fileInputRef, onShapesLoaded }) {
       return entities;
     }
     
-    // Canvas settings
     const canvasWidth = 1200;
     const canvasHeight = 700;
     const padding = 50;
     
-    // Calculate scale
     const scaleX = (canvasWidth - 2 * padding) / width;
     const scaleY = (canvasHeight - 2 * padding) / height;
     const scale = Math.min(scaleX, scaleY) * 0.8;
     
     console.log(`Scale: ${scale.toFixed(4)}`);
     
-    // Transform points
     entities.forEach(entity => {
       entity.points = entity.points.map(([x, y]) => {
         const newX = (x - minX) * scale + padding;
@@ -228,12 +212,11 @@ function FileOperations({ stageRef, fileInputRef, onShapesLoaded }) {
     return entities;
   };
 
-  // Load DXF File from predefined list
   const loadPredefinedDxf = async (dxfFile) => {
     try {
       const response = await fetch(dxfFile.file);
       if (!response.ok) {
-        showToast.error(`Failed to load ${dxfFile.name}`, { duration: 2000 });
+        message.error(`Failed to load ${dxfFile.name}`);
         return;
       }
 
@@ -254,26 +237,22 @@ function FileOperations({ stageRef, fileInputRef, onShapesLoaded }) {
         }));
 
         onShapesLoaded(newShapes);
-        showToast.success(
-          `Loaded ${parsedShapes.length} shapes from ${dxfFile.name}`,
-          { duration: 2000 }
-        );
+        message.success(`Loaded ${parsedShapes.length} shapes from ${dxfFile.name}`);
       } else {
-        showToast.warning("No shapes found in DXF file", { duration: 2000 });
+        message.warning("No shapes found in DXF file");
       }
     } catch (error) {
-      showToast.error("Error loading DXF file", { duration: 2000 });
+      message.error("Error loading DXF file");
       console.error("DXF Load Error:", error);
     }
   };
 
-  // DXF File Upload Handler
   const handleFileUpload = (event) => {
     const file = event.target.files[0];
     if (!file) return;
 
     if (!file.name.endsWith(".dxf")) {
-      showToast.error("Please upload a .dxf file", { duration: 2000 });
+      message.error("Please upload a .dxf file");
       return;
     }
 
@@ -297,15 +276,12 @@ function FileOperations({ stageRef, fileInputRef, onShapesLoaded }) {
           }));
 
           onShapesLoaded(newShapes);
-          showToast.success(
-            `Loaded ${parsedShapes.length} shapes from DXF file`,
-            { duration: 2000 }
-          );
+          message.success(`Loaded ${parsedShapes.length} shapes from DXF file`);
         } else {
-          showToast.warning("No shapes found in DXF file", { duration: 2000 });
+          message.warning("No shapes found in DXF file");
         }
       } catch (error) {
-        showToast.error("Error parsing DXF file", { duration: 2000 });
+        message.error("Error parsing DXF file");
         console.error("DXF Parse Error:", error);
       }
     };
@@ -313,7 +289,6 @@ function FileOperations({ stageRef, fileInputRef, onShapesLoaded }) {
     event.target.value = null;
   };
 
-  // Export as Image
   const exportAsImage = () => {
     if (stageRef.current) {
       const stage = stageRef.current.getStage();
@@ -326,19 +301,20 @@ function FileOperations({ stageRef, fileInputRef, onShapesLoaded }) {
       link.click();
       document.body.removeChild(link);
 
-      showToast.success("Exported as PNG image", { duration: 2000 });
+      message.success("Exported as PNG image");
     }
   };
 
   return (
     <Card title="📁 File Operations" size="small" className="shadow-md">
-      <Space orientation="vertical" className="w-full" size="small">
+      <Space direction="vertical" className="w-full" size="small">
         <Button
           type="primary"
           icon={<UploadOutlined />}
           onClick={() => fileInputRef.current?.click()}
           block
           size="large"
+          className="bg-gradient-to-r from-blue-500 to-blue-600"
         >
           Upload DXF File
         </Button>
