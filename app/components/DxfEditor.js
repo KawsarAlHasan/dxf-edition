@@ -33,6 +33,7 @@ const DxfEditor = () => {
   // State Management
   const [shapes, setShapes] = useState([]);
   const [history, setHistory] = useState([]);
+  const [drillingHoles, setDrillingHoles] = useState([]); // Drilling Holes
   const [historyIndex, setHistoryIndex] = useState(-1);
   const [selectedShape, setSelectedShape] = useState(null);
   const [selectedPoint, setSelectedPoint] = useState(null);
@@ -67,10 +68,25 @@ const DxfEditor = () => {
         id: "shape-1",
         type: "rectangle",
         points: [
-          [100, 100],
-          [400, 100],
-          [400, 300],
-          [100, 300],
+          [192, 227],
+          [213, 211],
+          [235, 197],
+          [258, 184],
+          [283, 173],
+          [308, 165],
+          [334, 159],
+          [360, 155],
+          [387, 154],
+          [414, 155],
+          [440, 159],
+          [466, 165],
+          [491, 173],
+          [516, 184],
+          [539, 197],
+          [561, 211],
+          [582, 228],
+          [582, 582],
+          [192, 582],
         ],
         color: "#1890ff",
         strokeWidth: 2,
@@ -79,6 +95,24 @@ const DxfEditor = () => {
         locked: false,
         name: "Sample Rectangle",
       },
+      // {
+      //   id: "shape-1",
+      //   type: "rectangle",
+      //   points: [
+      //     [276, 102],
+      //     [498, 102],
+      //     [582, 228],
+      //     [582, 582],
+      //     [192, 582],
+      //     [192, 228],
+      //   ],
+      //   color: "#1890ff",
+      //   strokeWidth: 2,
+      //   closed: true,
+      //   visible: true,
+      //   locked: false,
+      //   name: "Sample Rectangle",
+      // },
     ];
     setShapes(sampleShapes);
     updateHistory(sampleShapes);
