@@ -307,7 +307,7 @@ function FileOperations({ stageRef, fileInputRef, onShapesLoaded }) {
 
   return (
     <Card title="📁 File Operations" size="small" className="shadow-md">
-      <Space direction="vertical" className="w-full" size="small">
+      <Space orientation="vertical" className="w-full" size="small">
         <Button
           type="primary"
           icon={<UploadOutlined />}
