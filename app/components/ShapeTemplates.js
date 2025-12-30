@@ -227,7 +227,7 @@ function ShapeTemplates({ onShapeSelect }) {
       size="small" 
       className="shadow-md"
     >
-      <Space direction="vertical" className="w-full" size="small">
+      <Space orientation="vertical" className="w-full" size="small">
         <div className="text-xs text-gray-500 mb-1">Basic Shapes</div>
         <div className="grid grid-cols-4 gap-2">
           {shapeTemplates.map((template) => (
